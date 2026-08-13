@@ -49,8 +49,6 @@ https://github.com/flucoma/flucoma-core
 ### Grainflow~
 https://github.com/composingcap/grainflow
 
-### jweb-hands-landmarker
-https://github.com/lysdexic-audio/jweb-hands-landmarker
 
 ## Contact
 
