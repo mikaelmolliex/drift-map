@@ -1,0 +1,10 @@
+0, 01_DrumsGlitchedArcadeTillStems2_95BPM.wav;
+1, 02_Lead_Vocals.wav;
+2, 03_NoisySynth.wav;
+3, 04_Synth_1.wav;
+4, 05_Synth_2_96BPM.wav;
+5, 06_Synth3_89BPM.wav;
+6, 07_AngelaKit_Pattern1_120.wav;
+7, 08_ArtikaKit_114Bpm.wav;
+8, 09_DreamyState.wav;
+9, 10_Bongo75.wav;
