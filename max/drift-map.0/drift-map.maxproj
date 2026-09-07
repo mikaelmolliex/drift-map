@@ -2,8 +2,8 @@
     "name": "drift-map",
     "version": 1,
     "creationdate": 3859615462,
-    "modificationdate": 3869321215,
-    "viewrect": [ 12.0, 95.0, 829.0, 793.0 ],
+    "modificationdate": 3871595897,
+    "viewrect": [ 0.0, 95.0, 1512.0, 853.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
     "showdependencies": 1,
@@ -17,7 +17,47 @@
             }
         },
         "media": {
+            "LogoMMDark.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
             "PowerLogoMM.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "arrow-down-circle.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "arrow-up-circle.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "cpu.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "dots-grid3x3.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "floppy-disk-arrow-in.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "forward_logo.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "gamepad.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "grid-minus.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "grid-plus.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -29,11 +69,81 @@
                 "kind": "vectorimagefile",
                 "local": 1
             },
+            "list.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
             "nav-arrow-left-solid.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
             "nav-arrow-right-solid.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "open-select-hand-gesture.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "pause-solid.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "pc-mouse.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "piano_keys.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "play-solid.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "pulse.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "rewind_logo.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "smartphone-device.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "video-camera-off.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "video-camera.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "import_Logo.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "LandmarksLeftHand.svg": {
+                "kind": "vectorimagefile"
+            },
+            "LandmarksRightHand.svg": {
+                "kind": "vectorimagefile"
+            },
+            "switch-off.svg": {
+                "kind": "vectorimagefile"
+            },
+            "switch-on.svg": {
+                "kind": "vectorimagefile"
+            },
+            "forward.svg": {
+                "kind": "vectorimagefile"
+            },
+            "rewind.svg": {
+                "kind": "vectorimagefile"
+            },
+            "refresh-circle.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -101,33 +211,129 @@
                 "kind": "vectorimagefile",
                 "local": 1
             },
-            "arrow-up-circle.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
             "arrow-up-circle-solid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
-            "arrow-down-circle.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
             "arrow-down-circle-solid.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
+            },
+            "playstation-gamepad.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "dots-grid3x3-solid.svg": {
+                "kind": "vectorimagefile",
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/GitHub_Projets/00_MM_GitHub_Projects/drift-map/max/drift-map.0/media",
+                    "projectrelativepath": "./media"
+                }
+            },
+            "view-grid.svg": {
+                "kind": "vectorimagefile",
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
+                    "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
+                }
+            },
+            "select-face3d.svg": {
+                "kind": "vectorimagefile",
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
+                    "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
+                }
+            },
+            "report-columns.svg": {
+                "kind": "vectorimagefile",
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
+                    "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
+                }
+            },
+            "orthogonal-view.svg": {
+                "kind": "vectorimagefile",
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
+                    "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
+                }
+            },
+            "thumbs-up.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "thumbs-down.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
             }
         },
         "code": {
+            "createFolders.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "custom.dial.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "driftmap_config.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "driftmap_controller.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "driftmap_theme.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "driftmap_ui.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "gamepad_viz.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "gesture_mapper_ui_multimode_extended.js": {
+                "kind": "javascript",
+                "local": 1
+            },
             "mediapipe_handdraw.js": {
                 "kind": "javascript",
                 "local": 1
             },
-            "node-script_driftmap.js": {
+            "routing-matrix_gamepad_dial_270.js": {
+                "kind": "javascript"
+            },
+            "routing-matrix_resize_any.js": {
+                "kind": "javascript"
+            },
+            "run_mediapipe_maxmsp.js": {
                 "kind": "javascript",
                 "local": 1
             },
-            "jweb-hands-landmarker.js": {
+            "run_mediapipe_maxmsp_project.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "run_mediapipe_standalone.js": {
+                "kind": "javascript",
+                "local": 1
+            },
+            "routing-matrix_left_interface.js": {
+                "kind": "javascript"
+            },
+            "routing-matrix_right_interface.js": {
+                "kind": "javascript"
+            },
+            "node-script_driftmap.js": {
                 "kind": "javascript",
                 "local": 1
             },
@@ -137,7 +343,7 @@
             }
         },
         "data": {
-            "Algorithmic Dust.json": {
+            "Controller Grainscape.json": {
                 "kind": "json",
                 "local": 1
             },
@@ -145,11 +351,19 @@
                 "kind": "json",
                 "local": 1
             },
-            "Formant Cloud.json": {
+            "Neural Drift.json": {
                 "kind": "json",
                 "local": 1
             },
-            "Controller Grainscape.json": {
+            "Algorithmic Dust.json": {
+                "kind": "json",
+                "local": 1
+            },
+            "Init Gamepad.json": {
+                "kind": "json",
+                "local": 1
+            },
+            "Formant Cloud.json": {
                 "kind": "json",
                 "local": 1
             },
@@ -158,10 +372,6 @@
                 "local": 1
             },
             "Haptic Flux.json": {
-                "kind": "json",
-                "local": 1
-            },
-            "Init Gamepad.json": {
                 "kind": "json",
                 "local": 1
             },
@@ -181,32 +391,37 @@
                 "kind": "json",
                 "local": 1
             },
-            "Neural Drift.json": {
-                "kind": "json",
-                "local": 1
-            },
             "Synapse Scatter.json": {
                 "kind": "json",
                 "local": 1
             }
         },
         "externals": {
-            "fluid.mlpregressor~.mxo": {
+            "fluid.buf2list.mxo": {
                 "kind": "object",
-                "local": 1,
-                "singleton": {
-                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
-                    "projectrelativepath": "./media"
-                }
-            }
-        },
-        "other": {
-            "jweb-hands-landmarker.html": {
-                "kind": "webpage",
                 "local": 1
             },
-            "mesh-style.css": {
-                "kind": "stylesheet",
+            "fluid.list2buf.mxo": {
+                "kind": "object",
+                "local": 1
+            },
+            "grainflow.util.stereopan~.mxo": {
+                "kind": "object",
+                "local": 1
+            },
+            "grainflow.waveform~.mxo": {
+                "kind": "object",
+                "local": 1
+            },
+            "grainflow~.mxo": {
+                "kind": "object",
+                "local": 1
+            },
+            "ultraleap.mxo": {
+                "kind": "object"
+            },
+            "fluid.mlpregressor~.mxo": {
+                "kind": "object",
                 "local": 1
             }
         }

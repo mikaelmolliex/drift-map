@@ -16,19 +16,44 @@ var handle_upper_inner =  	[ 0.3, 0.75 ];
 var bottom_outer = 			[ 0.35, 0.7 ];
 var bottom_inner = 			[ 0.45, 0.7 ];
 
-// these colors updated in paint method to match themes
-// if you'd like to change them, you'll need to handle in paint too
-var _fgcolor = this.patcher.getattr("textcolor");
+// Couleurs et opacite personnalisables
 var _bgcolor = this.patcher.getattr("locked_bgcolor");
-var _drawbg = 1;
+
+// 0.0 = fond transparent, 1.0 = fond opaque
+var _background_alpha = 0.0;
+
+// Couleur RGBA du gamepad (valeurs de 0.0 a 1.0)
+var _gamepad_color = [0.882, 0.588, 0.008, 1.0];
+
 var _linewidth = 3;
 var _font_size = 10.;
 var _press_alpha = 0.7;
 
-// Couleur personnalisée pour l'état appuyé
-var _pressed_color = [0.882, 0.588, 0.008, 1.0];
-
 var _state = {};
+
+function clamp01(value)
+{
+	return Math.max(0., Math.min(1., value));
+}
+
+// Message Max : bgopacity 0.5
+function bgopacity(value)
+{
+	_background_alpha = clamp01(value);
+	mgraphics.redraw();
+}
+
+// Message Max : gamepadcolor 1. 0.2 0.1 1.
+// Le quatrieme argument (alpha) est facultatif.
+function gamepadcolor(r, g, b, a)
+{
+	if (arguments.length < 4) {
+		a = 1.;
+	}
+
+	_gamepad_color = [clamp01(r), clamp01(g), clamp01(b), clamp01(a)];
+	mgraphics.redraw();
+}
 
 function clear() 
 {
@@ -267,18 +292,23 @@ function button_stroke(name)
 {
 	if (_state[name] && (_state[name].val || _state[name].press)) {
 		_state[name].press = false;
-		mgraphics.set_source_rgba(_fgcolor[0], _fgcolor[1], _fgcolor[2], _press_alpha);
+		mgraphics.set_source_rgba(
+			_gamepad_color[0],
+			_gamepad_color[1],
+			_gamepad_color[2],
+			_gamepad_color[3] * _press_alpha
+		);
 		mgraphics.fill_preserve();
-		mgraphics.set_source_rgba(_fgcolor);		
+		mgraphics.set_source_rgba(_gamepad_color);		
 		mgraphics.stroke();
 	} else {
+		mgraphics.set_source_rgba(_gamepad_color);
 		mgraphics.stroke();
 	}
 }
 
 function paint()
 {
-	_fgcolor = this.patcher.getattr("textcolor");
 	_bgcolor = this.patcher.getattr("locked_bgcolor");
 	
 	var viewsize = mgraphics.size;
@@ -309,8 +339,13 @@ function paint()
 	var r_bottom_outer = adjust_right(bottom_outer, aspect);
 	var r_bottom_inner = adjust_right(bottom_inner, aspect);
 	
-	if (_drawbg) {
-		mgraphics.set_source_rgba(_bgcolor);
+	if (_background_alpha > 0.) {
+		mgraphics.set_source_rgba(
+			_bgcolor[0],
+			_bgcolor[1],
+			_bgcolor[2],
+			_background_alpha
+		);
 		mgraphics.rectangle(-aspect, 1, aspect*2, 2);
 		mgraphics.fill();
 	}	
@@ -350,7 +385,7 @@ function paint()
 	}
 
 	var curve = 0.5;
-	mgraphics.set_source_rgba(_fgcolor);
+	mgraphics.set_source_rgba(_gamepad_color);
 	mgraphics.move_to(l_top_inner);
 	curve_helper(r_top_outer, l_top_inner, l_top_outer, curve);
 	curve_helper(l_top_inner, l_top_outer, l_handle_upper_outer, curve);

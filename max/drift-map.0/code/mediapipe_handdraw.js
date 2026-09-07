@@ -9,12 +9,12 @@ var trackerReady = false;
 var spin = 0;
 
 var CONNECTIONS = [
-    [0,1],[1,2],[2,3],[3,4],
-    [0,5],[5,6],[6,7],[7,8],
-    [0,9],[9,10],[10,11],[11,12],
-    [0,13],[13,14],[14,15],[15,16],
-    [0,17],[17,18],[18,19],[19,20],
-    [5,9],[9,13],[13,17]
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [0, 9], [9, 10], [10, 11], [11, 12],
+    [0, 13], [13, 14], [14, 15], [15, 16],
+    [0, 17], [17, 18], [18, 19], [19, 20],
+    [5, 9], [9, 13], [13, 17]
 ];
 
 function left()
@@ -50,7 +50,7 @@ function paint()
     var w = box.rect[2] - box.rect[0];
     var h = box.rect[3] - box.rect[1];
 
-    // transparent background
+    // Transparent background
 
     if (!trackerReady)
     {
@@ -58,18 +58,26 @@ function paint()
         return;
     }
 
+    // Left hand — light green
     drawHand(
         leftHand,
         w,
         h,
-        0.882, 0.588, 0.008, 1.0
+        0.729,
+        0.816,
+        0.620,
+        1.000
     );
 
+    // Right hand — orange
     drawHand(
         rightHand,
         w,
         h,
-        0.365, 0.420, 0.886, 1.0
+        0.851,
+        0.371,
+        0.220,
+        1.000
     );
 }
 
@@ -77,47 +85,54 @@ function drawLoader(w, h)
 {
     var cx = w * 0.5;
     var cy = h * 0.5;
-
     var radius = 50;
 
-    for(var i = 0; i < 12; i++)
-    {
-        var a = spin + (i * Math.PI * 2 / 12);
+    // Neutral palette
+    var darkR = 0.28;
+    var darkG = 0.28;
+    var darkB = 0.27;
 
-        var x = cx + Math.cos(a) * radius;
-        var y = cy + Math.sin(a) * radius;
+    var creamR = 0.96;
+    var creamG = 0.94;
+    var creamB = 0.88;
+
+    for (var i = 0; i < 12; i++)
+    {
+        var angle = spin + (i * Math.PI * 2 / 12);
+
+        var x = cx + Math.cos(angle) * radius;
+        var y = cy + Math.sin(angle) * radius;
 
         var fade = (i + 1) / 12.0;
+        var alpha = 0.30 + fade * 0.70;
 
-        var r = 0.882 + (0.365 - 0.882) * fade;
-        var g = 0.588 + (0.420 - 0.588) * fade;
-        var b = 0.008 + (0.886 - 0.008) * fade;
+        var r = darkR + (creamR - darkR) * fade;
+        var g = darkG + (creamG - darkG) * fade;
+        var b = darkB + (creamB - darkB) * fade;
 
-        mgraphics.set_source_rgba(r, g, b, fade);
+        // Subtle outline for visibility on light backgrounds
+        mgraphics.set_source_rgba(0.12, 0.12, 0.12, 0.28);
+        mgraphics.arc(x, y, 7, 0, Math.PI * 2);
+        mgraphics.fill();
 
-        mgraphics.arc(
-            x,
-            y,
-            6,
-            0,
-            Math.PI * 2
-        );
-
+        // Neutral inner dot
+        mgraphics.set_source_rgba(r, g, b, alpha);
+        mgraphics.arc(x, y, 5.5, 0, Math.PI * 2);
         mgraphics.fill();
     }
 }
 
 function drawHand(hand, w, h, r, g, b, a)
 {
-    if(hand.length < 63)
+    if (hand.length < 63)
         return;
 
     mgraphics.set_source_rgba(r, g, b, a);
     mgraphics.set_line_width(2);
 
-    // skeleton
+    // Skeleton
 
-    for(var i = 0; i < CONNECTIONS.length; i++)
+    for (var i = 0; i < CONNECTIONS.length; i++)
     {
         var p1 = CONNECTIONS[i][0];
         var p2 = CONNECTIONS[i][1];
@@ -134,9 +149,9 @@ function drawHand(hand, w, h, r, g, b, a)
 
     mgraphics.stroke();
 
-    // landmarks
+    // Landmarks
 
-    for(var i = 0; i < 21; i++)
+    for (var i = 0; i < 21; i++)
     {
         var x = hand[i * 3] * w;
         var y = (1 - hand[i * 3 + 1]) * h;
