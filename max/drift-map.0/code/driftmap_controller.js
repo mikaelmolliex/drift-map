@@ -23,6 +23,7 @@ var emitTask = null;
 var scheduledStep = null;
 var trainingTask = null;
 var scheduledTrainingStep = null;
+var overlayTask = null;
 
 function createInitialState() {
     return {
@@ -31,9 +32,13 @@ function createInitialState() {
         phase: "idle",
         realModelState: "train_to_start",
         modelBypass: false,
-        showMapPoints: false,
-        showExplorePoints: false,
+        showMapPoints: true,
+        showExplorePoints: true,
         showLearnPoints: true,
+        showExploreMap: false,
+        showLearnMap: true,
+        overlay: "none",
+        interactionLocked: false,
         slotsBlocked: false,
 
         slotList: [],
@@ -110,7 +115,11 @@ function createInitialState() {
         architectureChangeDuringTraining: false,
 
         pendingTrainingAction: "",
-        pendingMode: ""
+        pendingMode: "",
+
+        resetInProgress: false,
+        resetDatasetConfirmed: false,
+        resetModelConfirmed: false
     };
 }
 
@@ -173,6 +182,10 @@ function handleCommand(name, args) {
         setPointVisibility("explore", args[0]);
     } else if (name === "showlearnpoints") {
         setPointVisibility("learn", args[0]);
+    } else if (name === "showexploremap") {
+        setMapVisibility("explore", args[0]);
+    } else if (name === "showlearnmap") {
+        setMapVisibility("learn", args[0]);
     } else if (name === "minlikes" || name === "minlikedpatterns") {
         setMinLikedPatterns(args[0]);
     } else if (name === "maxanchors") {
@@ -252,10 +265,12 @@ function isJsuiVisualCommand(name) {
         backgroundcolor: true, questionnairebgcolor: true,
         mapbackgroundcolor: true, mapbordercolor: true, mapgridcolor: true,
         leftcolor: true, rightcolor: true, orbcolor: true,
-        orbsecondarycolor: true, orbpointcolor: true,
+        orbprimarycolor: true, orbsecondarycolor: true, orbpointcolor: true,
+        orbthirdcolor: true, orbfourthcolor: true, orbfifthcolor: true,
         leftmappointcolor: true, rightmappointcolor: true,
         mappointprimarycolor: true, mappointsecondarycolor: true,
-        mappointthirdcolor: true,
+        mappointthirdcolor: true, mappointfourthcolor: true,
+        mappointfifthcolor: true,
         bulletcolor: true, bulletansweredcolor: true,
         bulletselectedcolor: true, bulletselectedbordercolor: true,
         canceltextcolor: true, textcolor: true, mutedtextcolor: true,
@@ -331,12 +346,18 @@ function resetController() {
         return;
     }
     stopEmitTask();
+    cancelTrainingTask();
+    cancelOverlayTask();
+    state = createInitialState();
+    state.pendingClearReason = "reset";
+    state.resetInProgress = true;
+    state.resetDatasetConfirmed = false;
+    state.resetModelConfirmed = false;
+    state.modelResetConfirmed = false;
+
     outlet(4, ["blockslots", 0]);
     outlet(4, ["play_gate", 0]);
     outlet(4, ["modelbypass", 0]);
-    outlet(4, "clear_map");
-    state = createInitialState();
-    state.pendingClearReason = "reset";
     emitUi(["mode", "auto"]);
     emitUi(["liked"]);
     emitUi(["selected"]);
@@ -347,8 +368,14 @@ function resetController() {
     emitUi(["maxanchors", state.maxAnchors]);
     emitUi(["questionnaire_reset"]);
     emitUi(["view", "explore"]);
+    emitUi(["showexploremap", 0]);
+    emitUi(["showlearnmap", 1]);
+    emitUi(["showexplorepoints", 1]);
+    emitUi(["showlearnpoints", 1]);
     setPhase("idle");
     emitStateSnapshot();
+    outlet(4, "clear_map");
+    outlet(4, "reset_model");
 }
 
 function setMode(value) {
@@ -468,6 +495,21 @@ function setPointVisibility(view, value) {
         state.showExplorePoints = visible;
         emitUi(["showexplorepoints", visible ? 1 : 0]);
         emitState(["dataset", "showexplorepoints", visible ? 1 : 0]);
+    }
+    state.showMapPoints = state.showExplorePoints && state.showLearnPoints;
+    emitState(["dataset", "showmappoints", state.showMapPoints ? 1 : 0]);
+}
+
+function setMapVisibility(view, value) {
+    var visible = readBoolean(value);
+    if (view === "learn") {
+        state.showLearnMap = visible;
+        emitUi(["showlearnmap", visible ? 1 : 0]);
+        emitState(["dataset", "showlearnmap", visible ? 1 : 0]);
+    } else {
+        state.showExploreMap = visible;
+        emitUi(["showexploremap", visible ? 1 : 0]);
+        emitState(["dataset", "showexploremap", visible ? 1 : 0]);
     }
 }
 
@@ -767,18 +809,19 @@ function requestDatasetClear(reason) {
 
 function handleDatasetCleared() {
     var reason = state.pendingClearReason;
+    var fullReset = state.resetInProgress && reason === "reset";
     stopEmitTask();
     state.queue = [];
     state.pointCounter = 0;
     state.datasetSize = 0;
     state.batchCurrent = 0;
     state.batchTotal = 0;
-    state.pendingClearReason = "";
+    state.pendingClearReason = fullReset ? "reset" : "";
     state.modelHasWeights = false;
     state.realModelState = "train_to_start";
     state.datasetDirty = false;
     resetTrainingMetrics();
-    state.modelResetConfirmed = true;
+    state.modelResetConfirmed = fullReset ? state.resetModelConfirmed : false;
     state.architectureDirty = false;
     state.appliedConfigRevision = -1;
     state.appliedArchitectureRevision = -1;
@@ -791,7 +834,9 @@ function handleDatasetCleared() {
     emitStateEvent("dataset_cleared", []);
     emitTrainingState();
 
-    if (reason === "reset") {
+    if (fullReset) {
+        state.resetDatasetConfirmed = true;
+        completeControllerResetIfReady();
         return;
     } else if (reason === "auto" && state.mode === "auto" && state.selectedPatterns.length > 0) {
         beginAutoBuild();
@@ -1051,7 +1096,16 @@ function finishBatch() {
 
     if (state.mode === "auto" && state.phase === "auto_building") {
         state.autoGroupIndex += 1;
-        loadCurrentAutoGroup();
+        if (state.autoGroupIndex < state.autoGroups.length) {
+            /* The 250 ms point cadence must also survive a preset boundary.
+             * The batch already consumed XY settle + final settle, so wait
+             * only the remaining part before requesting the next preset. */
+            scheduleStep(loadCurrentAutoGroup, Math.max(0,
+                DRIFTMAP_POINT_CYCLE_MS - DRIFTMAP_XY_SETTLE_MS -
+                DRIFTMAP_FINAL_SETTLE_MS));
+        } else {
+            loadCurrentAutoGroup();
+        }
     } else if (state.mode === "semi") {
         setPhase("semi_ready");
         if (state.autoFit) {
@@ -1097,6 +1151,7 @@ function runScheduledStep() {
 function notifydeleted() {
     stopEmitTask();
     cancelTrainingTask();
+    cancelOverlayTask();
 }
 
 function scheduleTrainingStep(step) {
@@ -1320,6 +1375,12 @@ function beginManagedTraining(mode) {
     state.fitInFlight = false;
     if (requestedMode === "from_scratch") {
         resetTrainingMetrics();
+    } else {
+        /* CONTINUE is a new fitting session with the current weights. Keep
+         * the historical losses, but give convergence a fresh round budget. */
+        state.training.fitRound = 0;
+        state.training.plateau = 0;
+        state.previousLoss = state.training.currentLoss;
     }
     state.stopRequested = false;
     state.architectureChangeDuringTraining = false;
@@ -1629,8 +1690,11 @@ function finishManagedTraining(reason) {
             emitStateEvent("training_stopped", [reason]);
         }
         emitModelStatus();
-        setView("explore");
+        if (state.mode === "auto") {
+            setView("explore");
+        }
         restoreModePhase();
+        showModelReadyState();
         outlet(4, ["play_gate", 1]);
     } else if (reason === "architecture_changed") {
         state.realModelState = "train_to_start";
@@ -1691,6 +1755,12 @@ function handleModelResetDone() {
     emitTrainingState();
     emitStateEvent("model_reset", []);
 
+    if (state.resetInProgress) {
+        state.resetModelConfirmed = true;
+        completeControllerResetIfReady();
+        return;
+    }
+
     if (state.trainingActive && state.stopRequested) {
         finishManagedTraining("user_stop");
     } else if (action === "train_after_reset" && state.trainingActive) {
@@ -1700,6 +1770,25 @@ function handleModelResetDone() {
         state.pendingTrainingAction = "";
         restoreModePhase();
     }
+}
+
+function completeControllerResetIfReady() {
+    if (!state.resetInProgress || !state.resetDatasetConfirmed ||
+            !state.resetModelConfirmed) {
+        emitOverlayState();
+        return;
+    }
+    state.resetInProgress = false;
+    state.pendingClearReason = "";
+    state.modelResetConfirmed = true;
+    state.realModelState = "train_to_start";
+    emitMlpConfigurationToEngine(false);
+    emitAllMlpApplied();
+    emitMlpState();
+    emitUi(["reset_complete"]);
+    emitEvent("reset_complete", []);
+    emitStateEvent("reset_complete", []);
+    setPhase("idle");
 }
 
 function deferTrainingAction(action, value) {
@@ -1773,6 +1862,75 @@ function setPhase(phase) {
         publicState = phase;
     }
     emitUi(["state", publicState]);
+    setOverlay(overlayForPhase(phase));
+}
+
+function overlayForPhase(phase) {
+    if (phase === "questionnaire_loading" || phase === "questionnaire_waiting" ||
+            phase === "questionnaire_complete") {
+        return "questionnaire";
+    }
+    if (phase === "auto_building" ||
+            (phase === "clearing_dataset" && state.pendingClearReason === "auto")) {
+        return "creating_map";
+    }
+    if (phase === "training") {
+        return "training";
+    }
+    if (phase === "not_enough_patterns" || phase === "not_enough_likes" ||
+            phase === "error") {
+        return phase;
+    }
+    return "none";
+}
+
+function interactionShouldLock() {
+    return state.resetInProgress || state.overlay !== "none" ||
+        state.phase === "clearing_dataset" || state.phase === "semi_loading" ||
+        state.phase === "free_loading" || state.phase === "semi_building" ||
+        state.phase === "free_building";
+}
+
+function setOverlay(value) {
+    var next = String(value || "none");
+    if (next !== "model_ready") {
+        cancelOverlayTask();
+    }
+    state.overlay = next;
+    state.interactionLocked = interactionShouldLock();
+    emitUi(["overlay", next]);
+    emitState(["ui", "overlay", next]);
+    emitState(["ui", "interaction_locked", state.interactionLocked ? 1 : 0]);
+}
+
+function emitOverlayState() {
+    state.interactionLocked = interactionShouldLock();
+    emitState(["ui", "overlay", state.overlay]);
+    emitState(["ui", "interaction_locked", state.interactionLocked ? 1 : 0]);
+}
+
+function showModelReadyState() {
+    cancelOverlayTask();
+    setOverlay("model_ready");
+    overlayTask = new Task(finishModelReadyState, this);
+    overlayTask.schedule(DRIFTMAP_MODEL_READY_MS);
+}
+
+function finishModelReadyState() {
+    if (overlayTask !== null) {
+        overlayTask.cancel();
+        overlayTask = null;
+    }
+    if (state.overlay === "model_ready") {
+        setOverlay("none");
+    }
+}
+
+function cancelOverlayTask() {
+    if (overlayTask !== null) {
+        overlayTask.cancel();
+        overlayTask = null;
+    }
 }
 
 function setSeed(value) {
@@ -1975,6 +2133,7 @@ function emitStateSnapshot() {
     emitState(["ui", "view", state.view]);
     emitState(["ui", "mode", state.mode]);
     emitModelState();
+    emitOverlayState();
     emitSlotsState();
     emitState(["dataset", "size", state.datasetSize]);
     emitState(["dataset", "pattern", state.currentPattern]);
@@ -1986,6 +2145,8 @@ function emitStateSnapshot() {
     emitState(["dataset", "showmappoints", state.showMapPoints ? 1 : 0]);
     emitState(["dataset", "showexplorepoints", state.showExplorePoints ? 1 : 0]);
     emitState(["dataset", "showlearnpoints", state.showLearnPoints ? 1 : 0]);
+    emitState(["dataset", "showexploremap", state.showExploreMap ? 1 : 0]);
+    emitState(["dataset", "showlearnmap", state.showLearnMap ? 1 : 0]);
     emitMlpState();
     emitTrainingState();
     emitQuestionnaireState();

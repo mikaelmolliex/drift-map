@@ -9,9 +9,10 @@ var DRIFTMAP_MAX_SELECTED_PATTERNS = DRIFTMAP_MAX_ANCHORS;
 var DRIFTMAP_MIN_BATCH_POINTS = 1;
 var DRIFTMAP_MAX_BATCH_POINTS = 200;
 /* Timing for the staged point-writing protocol. */
-var DRIFTMAP_POINT_CYCLE_MS = 500;
-var DRIFTMAP_XY_SETTLE_MS = 100;
-var DRIFTMAP_FINAL_SETTLE_MS = 100;
+var DRIFTMAP_POINT_CYCLE_MS = 250;
+var DRIFTMAP_XY_SETTLE_MS = 50;
+var DRIFTMAP_FINAL_SETTLE_MS = 50;
+var DRIFTMAP_MODEL_READY_MS = 900;
 
 /* One authoritative set of editable MLP defaults. Automatic profiles below
  * are deliberate dataset-size presets, not duplicate default definitions. */

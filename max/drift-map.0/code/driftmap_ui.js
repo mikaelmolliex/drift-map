@@ -13,8 +13,8 @@ mgraphics.autofill = 0;
 
 include("driftmap_theme.js");
 
-var JSUI_WIDTH = 1492;
-var JSUI_HEIGHT = 500;
+var JSUI_WIDTH = 1489;
+var JSUI_HEIGHT = 542;
 var LOGICAL_WIDTH = JSUI_WIDTH;
 var LOGICAL_HEIGHT = JSUI_HEIGHT;
 var LEARN_EMPTY_RATIO = 0.30;
@@ -22,6 +22,7 @@ var LEARN_VISUAL_RATIO = 0.70;
 var EXPLORE_MAP_SIZE = 320;
 var LEARN_MAP_SIZE = 380;
 var LEARN_MAP_TOP = 90;
+var LEARN_MAP_SHIFT_X = 50;
 var DEFAULT_CURSOR_SIZE = 14;
 var THUMBS_UP_RESOURCE = "thumbs-up.svg";
 var THUMBS_DOWN_RESOURCE = "thumbs-down.svg";
@@ -29,13 +30,16 @@ var canvasTransform = {scale: 1, x: 0, y: 0};
 
 var viewState = {
     mainView: "explore",
+    mappingMode: "auto",
     screen: "idle",
     modelState: "empty",
     modelBypass: false,
     showModelReady: false,
-    showMapPoints: false,
-    showExplorePoints: false,
+    showMapPoints: true,
+    showExplorePoints: true,
     showLearnPoints: true,
+    showExploreMap: false,
+    showLearnMap: true,
 
     position: [0.5, 0.5, 0.5, 0.5],
     positionValid: false,
@@ -75,7 +79,7 @@ var viewState = {
     questionIconSize: 24,
     cancelButtonWidth: 120,
     cancelButtonHeight: 30,
-    cancelTextSize: 10,
+    cancelTextSize: 12,
     bulletSize: 4,
     bulletGap: 30,
     bulletSelectedBorderWidth: 1.8,
@@ -112,7 +116,6 @@ var pressedControl = "";
 var focusedControl = "";
 var projectResourceCache = {};
 var animationTask = null;
-var transitionTask = null;
 var pressedReleaseTask = null;
 
 function anything() {
@@ -185,8 +188,12 @@ function receiveMessage(name, args) {
         setMainView(name);
     } else if (name === "uipage") {
         setMainView(String(args[0]) === "params" ? "learn" : "explore");
+    } else if (name === "mode") {
+        setMappingMode(args[0]);
     } else if (name === "state") {
         setScreen(String(args[0] || "idle"));
+    } else if (name === "overlay") {
+        setOverlayScreen(args[0]);
     } else if (name === "modelstate") {
         setModelState(args[0]);
     } else if (name === "modelbypass") {
@@ -199,6 +206,10 @@ function receiveMessage(name, args) {
         viewState.showExplorePoints = Number(args[0]) !== 0;
     } else if (name === "showlearnpoints") {
         viewState.showLearnPoints = Number(args[0]) !== 0;
+    } else if (name === "showexploremap") {
+        viewState.showExploreMap = Number(args[0]) !== 0;
+    } else if (name === "showlearnmap") {
+        viewState.showLearnMap = Number(args[0]) !== 0;
     } else if (name === "leftcursorsize") {
         viewState.leftCursorSize = boundedNumber(args[0], viewState.leftCursorSize, 4, 80);
     } else if (name === "rightcursorsize") {
@@ -309,14 +320,18 @@ function receiveMessage(name, args) {
     } else if (name === "loss") {
         viewState.currentLoss = finiteOrNull(args[0]);
     } else if (name === "training_started") {
-        resetTrainingMetrics();
+        if (String(args[1] || "from_scratch") === "from_scratch") {
+            resetTrainingMetrics();
+        } else {
+            viewState.fitRound = 0;
+            viewState.plateau = 0;
+        }
         viewState.modelState = "training";
     } else if (name === "training_done") {
         if (args.length > 2) {
             viewState.bestLoss = finiteOrNull(args[2]);
         }
         viewState.modelState = "ready";
-        showModelReadyOverlay();
     } else if (name === "model_reset") {
         viewState.modelState = "empty";
         resetTrainingMetrics();
@@ -344,6 +359,27 @@ function setMainView(value) {
     }
     if (next === "explore" || next === "learn") {
         viewState.mainView = next;
+    }
+}
+
+function setMappingMode(value) {
+    var next = String(value || "auto").toLowerCase();
+    if (next === "auto" || next === "semi" || next === "free") {
+        viewState.mappingMode = next;
+    }
+}
+
+function setOverlayScreen(value) {
+    var next = String(value || "none").toLowerCase();
+    viewState.showModelReady = next === "model_ready";
+    if (next === "creating_map") {
+        viewState.screen = "auto_building";
+    } else if (next === "questionnaire" || next === "training" ||
+            next === "not_enough_patterns" || next === "not_enough_likes" ||
+            next === "error") {
+        viewState.screen = next;
+    } else if (next === "model_ready" || next === "none") {
+        viewState.screen = "idle";
     }
 }
 
@@ -510,32 +546,8 @@ function stopAnimation() {
     }
 }
 
-function showModelReadyOverlay() {
-    viewState.showModelReady = true;
-    if (transitionTask !== null) {
-        transitionTask.cancel();
-    }
-    transitionTask = new Task(finishModelReadyOverlay, this);
-    transitionTask.schedule(900);
-}
-
-function finishModelReadyOverlay() {
-    viewState.showModelReady = false;
-    viewState.screen = "idle";
-    if (transitionTask !== null) {
-        transitionTask.cancel();
-        transitionTask = null;
-    }
-    updateAnimation();
-    mgraphics.redraw();
-}
-
 function notifydeleted() {
     stopAnimation();
-    if (transitionTask !== null) {
-        transitionTask.cancel();
-        transitionTask = null;
-    }
     if (pressedReleaseTask !== null) {
         pressedReleaseTask.cancel();
         pressedReleaseTask = null;
@@ -555,18 +567,27 @@ function paint() {
         mgraphics.scale(canvasTransform.scale, canvasTransform.scale);
         fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT, COLORS.background);
     }
-    if (isOverlayActive()) {
+    if (viewState.showModelReady && viewState.mappingMode !== "auto") {
+        drawCurrentMapView(LOGICAL_WIDTH, LOGICAL_HEIGHT);
+        drawReadyOnMaps(LOGICAL_WIDTH, LOGICAL_HEIGHT);
+    } else if (isOverlayActive()) {
         drawOverlay(LOGICAL_WIDTH, LOGICAL_HEIGHT);
-    } else if (viewState.mainView === "learn") {
-        drawLearnView(LOGICAL_WIDTH, LOGICAL_HEIGHT);
     } else {
-        drawExploreView(LOGICAL_WIDTH, LOGICAL_HEIGHT);
+        drawCurrentMapView(LOGICAL_WIDTH, LOGICAL_HEIGHT);
     }
     normalizeControlState();
     if (viewState.debugHitboxes && controls.length > 0) {
         drawDebugHitboxes();
     }
     mgraphics.restore();
+}
+
+function drawCurrentMapView(width, height) {
+    if (viewState.mainView === "learn") {
+        drawLearnView(width, height);
+    } else {
+        drawExploreView(width, height);
+    }
 }
 
 function canvasUsesDirectCoordinates() {
@@ -593,8 +614,10 @@ function drawExploreView(width, height) {
     var centerY = height * 0.5;
     var leftMap = mapField(width / 6, centerY, EXPLORE_MAP_SIZE);
     var rightMap = mapField(width * 5 / 6, centerY, EXPLORE_MAP_SIZE);
-    drawMapPlane(leftMap);
-    drawMapPlane(rightMap);
+    if (viewState.showExploreMap) {
+        drawMapPlane(leftMap);
+        drawMapPlane(rightMap);
+    }
     if (viewState.showExplorePoints && !viewState.modelBypass) {
         drawDatasetProjection(leftMap, "left");
         drawDatasetProjection(rightMap, "right");
@@ -613,19 +636,14 @@ function drawExploreView(width, height) {
 }
 
 function drawLearnView(width, height) {
-    var visualX = width * LEARN_EMPTY_RATIO;
-    var visualWidth = width * LEARN_VISUAL_RATIO;
-    var gap = 36;
-    var mapSize = Math.min(LEARN_MAP_SIZE, height - LEARN_MAP_TOP,
-        (visualWidth - gap) * 0.5);
-    var totalWidth = mapSize * 2 + gap;
-    var startX = visualX + (visualWidth - totalWidth) * 0.5;
-    var mapY = LEARN_MAP_TOP;
-    var leftMap = {x: startX, y: mapY, width: mapSize, height: mapSize};
-    var rightMap = {x: startX + mapSize + gap, y: mapY, width: mapSize, height: mapSize};
-    /* Everything left of visualX remains untouched and fully transparent. */
-    drawMapPlane(leftMap);
-    drawMapPlane(rightMap);
+    var layout = learnMapLayout(width, height);
+    var leftMap = layout.left;
+    var rightMap = layout.right;
+    /* Everything left of the external Max control area remains transparent. */
+    if (viewState.showLearnMap) {
+        drawMapPlane(leftMap);
+        drawMapPlane(rightMap);
+    }
     if (viewState.showLearnPoints && !viewState.modelBypass) {
         drawDatasetProjection(leftMap, "left");
         drawDatasetProjection(rightMap, "right");
@@ -636,7 +654,23 @@ function drawLearnView(width, height) {
         viewState.leftCursorSize, COLORS.left);
     drawLiveMapCursor(rightMap, [viewState.position[2], viewState.position[3]],
         viewState.rightCursorSize, COLORS.right);
-    drawMapLabels(leftMap, rightMap);
+    if (viewState.showLearnMap) {
+        drawMapLabels(leftMap, rightMap);
+    }
+}
+
+function learnMapLayout(width, height) {
+    var visualX = width * LEARN_EMPTY_RATIO;
+    var visualWidth = width * LEARN_VISUAL_RATIO;
+    var gap = 36;
+    var mapSize = Math.min(LEARN_MAP_SIZE, height - LEARN_MAP_TOP,
+        (visualWidth - gap) * 0.5);
+    var totalWidth = mapSize * 2 + gap;
+    var startX = visualX + (visualWidth - totalWidth) * 0.5 + LEARN_MAP_SHIFT_X;
+    var mapY = LEARN_MAP_TOP;
+    var leftMap = {x: startX, y: mapY, width: mapSize, height: mapSize};
+    var rightMap = {x: startX + mapSize + gap, y: mapY, width: mapSize, height: mapSize};
+    return {left: leftMap, right: rightMap};
 }
 
 function mapField(cx, cy, size) {
@@ -731,7 +765,8 @@ function mapPointColor(side, patternId) {
         return side === "left" ? COLORS.leftMapPoint : COLORS.rightMapPoint;
     }
     if (viewState.mapPointColorMode === 4) {
-        palette = [COLORS.mapPointPrimary, COLORS.mapPointSecondary, COLORS.mapPointThird];
+        palette = [COLORS.mapPointPrimary, COLORS.mapPointSecondary,
+            COLORS.mapPointThird, COLORS.mapPointFourth, COLORS.mapPointFifth];
         index = Math.max(0, (Math.max(1, Number(patternId) || 1) - 1) % palette.length);
         return palette[index];
     }
@@ -788,6 +823,7 @@ function drawQuestionnaire(width, height) {
     var gap = 24;
     var buttonWidth = viewState.questionButtonWidth;
     var buttonX = (width - buttonWidth * 2 - gap) * 0.5;
+    var cancelY = height - 62;
     drawParticleOrb(width * 0.5, 166, Math.min(116, viewState.orbSize * 0.36),
         viewState.patternReady ? "listening" : "loading");
     drawQuestionnaireChoice(buttonX, 314, buttonWidth, viewState.questionButtonHeight,
@@ -796,7 +832,7 @@ function drawQuestionnaire(width, height) {
         viewState.questionButtonHeight, viewState.likeLabel, THUMBS_UP_RESOURCE,
         "right", "like", viewState.patternReady);
     drawQuestionnaireDots(width * 0.5, 408, 980);
-    drawCancelControl(width * 0.5 - viewState.cancelButtonWidth * 0.5, 446,
+    drawCancelControl(width * 0.5 - viewState.cancelButtonWidth * 0.5, cancelY,
         viewState.cancelButtonWidth, viewState.cancelButtonHeight);
 }
 
@@ -863,15 +899,27 @@ function drawReady(width, height) {
     drawParticleOrb(width * 0.5, 270, Math.min(150, viewState.orbSize * 0.46), "ready");
 }
 
+function drawReadyOnMaps(width, height) {
+    var centerX = width * 0.5;
+    var centerY = height * 0.5;
+    var layout;
+    if (viewState.mainView === "learn") {
+        layout = learnMapLayout(width, height);
+        centerX = (layout.left.x + layout.right.x + layout.right.width) * 0.5;
+        centerY = layout.left.y + layout.left.height * 0.5;
+    }
+    drawStatusText(viewState.readyLabel, centerX, centerY, COLORS.success);
+}
+
 function drawQuestionnaireRequirement(width, height) {
     var patterns = viewState.screen === "not_enough_patterns";
+    var cancelY = height - 62;
     drawParticleOrb(width * 0.5, 245, 108, "failed");
     drawStatusText(patterns ? "NOT ENOUGH PATTERNS" : "NOT ENOUGH LIKED PATTERNS",
         width * 0.5, 106, COLORS.warning);
-    drawText(patterns ? String(viewState.statusRequired) + " REQUIRED" :
-        String(viewState.statusAvailable) + " / " + String(viewState.statusRequired),
-        width * 0.5, 142, 14, COLORS.text, "center");
-    drawCancelControl(width * 0.5 - viewState.cancelButtonWidth * 0.5, 430,
+    drawText(String(viewState.statusAvailable) + " / " + String(viewState.statusRequired),
+        width * 0.5, cancelY - 12, 14, COLORS.text, "center");
+    drawCancelControl(width * 0.5 - viewState.cancelButtonWidth * 0.5, cancelY,
         viewState.cancelButtonWidth, viewState.cancelButtonHeight);
 }
 
@@ -1032,6 +1080,8 @@ function orbParticleColor(index, shell, stateName) {
     if (stateName === "training" && index % 17 === 0) { return COLORS.important; }
     if (stateName === "ready" && index % 19 === 0) { return COLORS.success; }
     if (stateName === "failed" && index % 13 === 0) { return COLORS.error; }
+    if (index % 37 === 0) { return COLORS.orbFifth; }
+    if (index % 31 === 0) { return COLORS.orbFourth; }
     if (index % 23 === 0) { return COLORS.orbPoint; }
     if (index % 29 === 0) { return COLORS.orbSecondary; }
     return shell ? COLORS.orb : COLORS.orbSecondary;
