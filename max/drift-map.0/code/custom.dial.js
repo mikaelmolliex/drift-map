@@ -3418,6 +3418,13 @@ function applyPendingPattrValue()
         );
 
     calculateOutput(0);
+
+    /*
+        The deferred recall must publish the restored value once.
+        Use sendOutputs() directly so MIN/MAX trigger bangs remain
+        silent during preset recall.
+    */
+    sendOutputs();
 }
 
 

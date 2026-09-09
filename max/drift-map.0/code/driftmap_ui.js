@@ -45,11 +45,16 @@ var viewState = {
     positionValid: false,
     points: [],
     pendingPoint: null,
+    patternColorIndices: {},
+    nextPatternColorIndex: 0,
     datasetSize: 0,
     autoPoints: 50,
     mappingCurrent: 0,
     mappingTotal: 50,
     mappingComplete: false,
+    creatingMapFeedbackActive: false,
+    creatingMapDuration: 12000,
+    creatingMapStartFrame: 0,
 
     currentPattern: 0,
     patternReady: false,
@@ -307,6 +312,13 @@ function receiveMessage(name, args) {
         viewState.mappingCurrent = Math.max(0, Number(args[0]) || 0);
         viewState.mappingTotal = Math.max(1, Number(args[1]) || viewState.autoPoints);
         viewState.mappingComplete = Number(args[2]) !== 0;
+    } else if (name === "creating_map_feedback") {
+        viewState.creatingMapFeedbackActive = Number(args[0]) !== 0;
+        viewState.creatingMapDuration = Math.max(1000,
+            Number(args[1]) || viewState.creatingMapDuration);
+        if (viewState.creatingMapFeedbackActive) {
+            viewState.creatingMapStartFrame = viewState.frame;
+        }
     } else if (name === "dataset_cleared" || name === "map_cleared") {
         clearVisualDataset();
     } else if (name === "auto_points") {
@@ -407,11 +419,15 @@ function setModelState(value) {
 
 function receivePointWriting(args) {
     var coordinates = normalizedCoordinates(args, 1);
+    var patternId;
     if (coordinates === null) {
         return;
     }
+    patternId = Math.max(0, Number(args[0]) || 0);
     viewState.pendingPoint = {
-        patternId: Math.max(0, Number(args[0]) || 0),
+        patternId: patternId,
+        colorIndex: colorIndexForPattern(patternId),
+        freePoint: viewState.mappingMode === "free",
         left: [coordinates[0], coordinates[1]],
         right: [coordinates[2], coordinates[3]],
         createdFrame: viewState.frame
@@ -421,6 +437,7 @@ function receivePointWriting(args) {
 function receivePointAdded(args) {
     var coordinates = normalizedCoordinates(args, 2);
     var id = String(args[0] || "");
+    var patternId = Math.max(0, Number(args[1]) || 0);
     var i;
     if (!id || coordinates === null) {
         return;
@@ -432,7 +449,9 @@ function receivePointAdded(args) {
     }
     viewState.points.push({
         id: id,
-        patternId: Math.max(0, Number(args[1]) || 0),
+        patternId: patternId,
+        colorIndex: colorIndexForPattern(patternId),
+        freePoint: viewState.mappingMode === "free",
         left: [coordinates[0], coordinates[1]],
         right: [coordinates[2], coordinates[3]],
         createdFrame: viewState.frame
@@ -444,10 +463,21 @@ function receivePointAdded(args) {
 function clearVisualDataset() {
     viewState.points = [];
     viewState.pendingPoint = null;
+    viewState.patternColorIndices = {};
+    viewState.nextPatternColorIndex = 0;
     viewState.datasetSize = 0;
     viewState.mappingCurrent = 0;
     viewState.mappingTotal = viewState.autoPoints;
     viewState.mappingComplete = false;
+}
+
+function colorIndexForPattern(patternId) {
+    var key = String(Math.max(0, Number(patternId) || 0));
+    if (!viewState.patternColorIndices.hasOwnProperty(key)) {
+        viewState.patternColorIndices[key] = viewState.nextPatternColorIndex % 5;
+        viewState.nextPatternColorIndex += 1;
+    }
+    return viewState.patternColorIndices[key];
 }
 
 function receiveFitResult(args) {
@@ -731,7 +761,8 @@ function drawDatasetProjection(zone, side) {
     var marker;
     for (i = 0; i < viewState.points.length; i += 1) {
         coordinate = side === "left" ? viewState.points[i].left : viewState.points[i].right;
-        color = mapPointColor(side, viewState.points[i].patternId);
+        color = mapPointColor(side, viewState.points[i].patternId,
+            viewState.points[i].colorIndex, viewState.points[i].freePoint);
         marker = projectMapCursor(coordinate, zone, viewState.mapPointSize * 0.5);
         fillCircle(marker[0], marker[1], viewState.mapPointSize * 0.5,
             themeColorWithAlpha(color, color[3] * 0.62));
@@ -748,16 +779,20 @@ function drawPendingPoint(zone, side) {
     }
     coordinate = side === "left" ? viewState.pendingPoint.left : viewState.pendingPoint.right;
     marker = projectMapCursor(coordinate, zone, viewState.mapPointSize * 0.5);
-    color = mapPointColor(side, viewState.pendingPoint.patternId);
+    color = mapPointColor(side, viewState.pendingPoint.patternId,
+        viewState.pendingPoint.colorIndex, viewState.pendingPoint.freePoint);
     pulse = viewState.reduceMotion ? 1 : 1 + 0.55 * Math.sin(viewState.frame * 0.25);
     fillCircle(marker[0], marker[1], viewState.mapPointSize * 0.75, color);
     strokeCircle(marker[0], marker[1], viewState.mapPointSize * (1.5 + pulse),
         themeColorWithAlpha(color, 0.35), 1.5);
 }
 
-function mapPointColor(side, patternId) {
+function mapPointColor(side, patternId, logicalIndex, freePoint) {
     var palette;
     var index;
+    if (freePoint) {
+        return COLORS.freePoint;
+    }
     if (viewState.mapPointColorMode === 2) {
         return COLORS.orbPoint;
     }
@@ -767,7 +802,11 @@ function mapPointColor(side, patternId) {
     if (viewState.mapPointColorMode === 4) {
         palette = [COLORS.mapPointPrimary, COLORS.mapPointSecondary,
             COLORS.mapPointThird, COLORS.mapPointFourth, COLORS.mapPointFifth];
-        index = Math.max(0, (Math.max(1, Number(patternId) || 1) - 1) % palette.length);
+        index = Number(logicalIndex);
+        if (!isFinite(index) || index < 0) {
+            index = colorIndexForPattern(patternId);
+        }
+        index = Math.floor(index) % palette.length;
         return palette[index];
     }
     return side === "left" ? COLORS.left : COLORS.right;
@@ -870,6 +909,10 @@ function drawQuestionnaireDots(cx, cy, availableWidth) {
 function drawBuilding(width, height) {
     var ratio = clip01(viewState.mappingCurrent / Math.max(1, viewState.mappingTotal));
     var barWidth = 360;
+    if (viewState.creatingMapFeedbackActive) {
+        ratio = clip01(((viewState.frame - viewState.creatingMapStartFrame) * 33) /
+            Math.max(1, viewState.creatingMapDuration));
+    }
     /* The final segment means that every point and the final settle step have
      * completed; emitting the last point id alone is not completion. */
     if (!viewState.mappingComplete) {
@@ -935,25 +978,40 @@ function drawStatusText(label, x, y, color) {
 }
 
 function drawButton(x, y, width, height, label, command, enabled, textSize) {
-    var id = command;
+    var control = registerControl(command, x, y, width, height, command, enabled);
+    var id = control.id;
     var fill = id === pressedControl ? COLORS.buttonPressed :
         (id === hoveredControl ? COLORS.buttonHover : COLORS.buttonBgOff);
     var border = id === pressedControl ? COLORS.buttonPressedBorder : COLORS.buttonBorder;
-    fillRoundedRect(x, y, width, height, viewState.buttonRoundness, fill);
-    strokeRoundedRect(x, y, width, height, viewState.buttonRoundness, border, 1.5);
-    drawText(label, x + width * 0.5, y + height * 0.5 + 5,
+    fillRoundedRect(control.x, control.y, control.width, control.height,
+        viewState.buttonRoundness, fill);
+    strokeRoundedRect(control.x, control.y, control.width, control.height,
+        viewState.buttonRoundness, border, 1.5);
+    drawText(label, control.x + control.width * 0.5,
+        control.y + control.height * 0.5 + 5,
         textSize, enabled ? COLORS.buttonTextOn : COLORS.muted, "center");
-    controls.push({id: id, x: x, y: y, width: width, height: height,
-        command: command, enabled: !!enabled});
 }
 
 function drawCancelControl(x, y, width, height) {
+    var control = registerControl("cancel_questionnaire", x, y, width, height,
+        "cancel_questionnaire", true);
     var color = hoveredControl === "cancel_questionnaire" || pressedControl === "cancel_questionnaire" ?
         COLORS.text : COLORS.cancelText;
-    drawText(viewState.cancelLabel, x + width * 0.5, y + height * 0.5 + 4,
+    drawText(viewState.cancelLabel, control.x + control.width * 0.5,
+        control.y + control.height * 0.5 + 4,
         viewState.cancelTextSize, color, "center");
-    controls.push({id: "cancel_questionnaire", x: x, y: y, width: width, height: height,
-        command: "cancel_questionnaire", enabled: true});
+}
+
+function registerControl(id, x, y, width, height, command, enabled) {
+    var control = {id: id, x: x, y: y, width: width, height: height,
+        command: command, enabled: !!enabled};
+    controls.push(control);
+    if (!control.enabled) {
+        if (hoveredControl === id) { hoveredControl = ""; }
+        if (pressedControl === id) { pressedControl = ""; }
+        if (focusedControl === id) { focusedControl = ""; }
+    }
+    return control;
 }
 
 function projectResourceAvailable(resourceName) {
@@ -1173,7 +1231,7 @@ function screenToLogical(x, y) {
 function hitTestControl(x, y) {
     var i;
     for (i = controls.length - 1; i >= 0; i -= 1) {
-        if (inside(controls[i], x, y)) {
+        if (controls[i].enabled && inside(controls[i], x, y)) {
             return controls[i].id;
         }
     }
@@ -1196,9 +1254,9 @@ function controlEnabled(id) {
 }
 
 function normalizeControlState() {
-    if (controlById(hoveredControl) === null) { hoveredControl = ""; }
-    if (controlById(pressedControl) === null) { pressedControl = ""; }
-    if (controlById(focusedControl) === null) { focusedControl = ""; }
+    if (!controlEnabled(hoveredControl)) { hoveredControl = ""; }
+    if (!controlEnabled(pressedControl)) { pressedControl = ""; }
+    if (!controlEnabled(focusedControl)) { focusedControl = ""; }
 }
 
 function drawDebugHitboxes() {

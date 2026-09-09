@@ -24,6 +24,7 @@ var scheduledStep = null;
 var trainingTask = null;
 var scheduledTrainingStep = null;
 var overlayTask = null;
+var creatingMapTask = null;
 
 function createInitialState() {
     return {
@@ -32,6 +33,7 @@ function createInitialState() {
         phase: "idle",
         realModelState: "train_to_start",
         modelBypass: false,
+        playGate: false,
         showMapPoints: true,
         showExplorePoints: true,
         showLearnPoints: true,
@@ -78,6 +80,9 @@ function createInitialState() {
         pendingPoint: null,
 
         autoFit: false,
+        creatingMapDuration: DRIFTMAP_CREATING_MAP_FEEDBACK_MS,
+        creatingMapFeedbackActive: false,
+        pendingReadyAfterCreatingMap: false,
         seed: 1,
         rngState: 1,
         debug: false,
@@ -186,6 +191,8 @@ function handleCommand(name, args) {
         setMapVisibility("explore", args[0]);
     } else if (name === "showlearnmap") {
         setMapVisibility("learn", args[0]);
+    } else if (name === "creatingmapduration" || name === "creating_map_duration") {
+        setCreatingMapDuration(args[0]);
     } else if (name === "minlikes" || name === "minlikedpatterns") {
         setMinLikedPatterns(args[0]);
     } else if (name === "maxanchors") {
@@ -268,9 +275,10 @@ function isJsuiVisualCommand(name) {
         orbprimarycolor: true, orbsecondarycolor: true, orbpointcolor: true,
         orbthirdcolor: true, orbfourthcolor: true, orbfifthcolor: true,
         leftmappointcolor: true, rightmappointcolor: true,
-        mappointprimarycolor: true, mappointsecondarycolor: true,
+        mappointprimarycolor: true, mappointfirstcolor: true,
+        mappointsecondarycolor: true, mappointsecondcolor: true,
         mappointthirdcolor: true, mappointfourthcolor: true,
-        mappointfifthcolor: true,
+        mappointfifthcolor: true, freepointcolor: true,
         bulletcolor: true, bulletansweredcolor: true,
         bulletselectedcolor: true, bulletselectedbordercolor: true,
         canceltextcolor: true, textcolor: true, mutedtextcolor: true,
@@ -341,14 +349,36 @@ function handleFeedback(name, args) {
 }
 
 function resetController() {
+    var preserved;
     if (state.trainingActive) {
         deferTrainingAction("reset_controller", "");
         return;
     }
+    preserved = {
+        view: state.view,
+        mode: state.mode,
+        currentPattern: state.currentPattern,
+        presetReady: state.presetReady && !state.awaitingPreset,
+        currentPosition: state.currentPosition.slice(0),
+        positionValid: state.positionValid,
+        slotList: state.slotList.slice(0),
+        slotListDeclared: state.slotListDeclared
+    };
     stopEmitTask();
     cancelTrainingTask();
     cancelOverlayTask();
+    cancelCreatingMapFeedback();
     state = createInitialState();
+    state.view = preserved.view;
+    state.mode = preserved.mode;
+    state.currentPattern = preserved.currentPattern;
+    state.presetReady = preserved.presetReady && validPattern(preserved.currentPattern);
+    state.currentPosition = preserved.currentPosition;
+    state.positionValid = preserved.positionValid;
+    state.slotList = preserved.slotList;
+    state.slotListDeclared = preserved.slotListDeclared;
+    state.availablePatternCount = state.slotList.length;
+    state.effectiveMinLikedPatterns = Math.min(state.minLikedPatterns, state.slotList.length);
     state.pendingClearReason = "reset";
     state.resetInProgress = true;
     state.resetDatasetConfirmed = false;
@@ -356,9 +386,9 @@ function resetController() {
     state.modelResetConfirmed = false;
 
     outlet(4, ["blockslots", 0]);
-    outlet(4, ["play_gate", 0]);
+    setPlayGate(0);
     outlet(4, ["modelbypass", 0]);
-    emitUi(["mode", "auto"]);
+    emitUi(["mode", state.mode]);
     emitUi(["liked"]);
     emitUi(["selected"]);
     emitUi(["dataset_points", 0]);
@@ -367,12 +397,15 @@ function resetController() {
     emitUi(["minlikes", state.minLikedPatterns]);
     emitUi(["maxanchors", state.maxAnchors]);
     emitUi(["questionnaire_reset"]);
-    emitUi(["view", "explore"]);
+    if (state.presetReady) {
+        emitUi(["pattern_ready", state.currentPattern]);
+    }
+    emitUi(["view", state.view]);
     emitUi(["showexploremap", 0]);
     emitUi(["showlearnmap", 1]);
     emitUi(["showexplorepoints", 1]);
     emitUi(["showlearnpoints", 1]);
-    setPhase("idle");
+    setPhase("clearing_dataset");
     emitStateSnapshot();
     outlet(4, "clear_map");
     outlet(4, "reset_model");
@@ -417,7 +450,7 @@ function applyMode(next) {
     state.pendingClearReason = "";
     state.awaitingPreset = false;
     state.presetReady = readyPattern > 0;
-    outlet(4, ["play_gate", 0]);
+    setPlayGate(0);
     state.mode = next;
     emitUi(["mode", next]);
     emitState(["ui", "mode", next]);
@@ -473,6 +506,22 @@ function setModelBypass(value) {
     emitUi(["modelbypass", state.modelBypass ? 1 : 0]);
     outlet(4, ["modelbypass", state.modelBypass ? 1 : 0]);
     emitModelState();
+}
+
+function setPlayGate(value) {
+    state.playGate = readBoolean(value);
+    outlet(4, ["play_gate", state.playGate ? 1 : 0]);
+    emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+}
+
+function setCreatingMapDuration(value) {
+    var parsed = toInteger(value);
+    if (!isFiniteNumber(parsed) || parsed < 1000 || parsed > 120000) {
+        emitError("invalid_creating_map_duration", false);
+        return;
+    }
+    state.creatingMapDuration = parsed;
+    emitState(["ui", "creating_map_duration", parsed]);
 }
 
 function setShowMapPoints(value) {
@@ -792,17 +841,21 @@ function filledAnswers(total) {
 }
 
 function requestDatasetClear(reason) {
+    var clearReason = reason || "manual";
     if (state.trainingActive) {
-        deferTrainingAction("clear_map", reason || "manual");
+        deferTrainingAction("clear_map", clearReason);
         emitError("clear_deferred", false);
         return;
     }
     stopEmitTask();
+    cancelCreatingMapFeedback();
     state.queue = [];
-    state.pendingClearReason = reason || "manual";
-    state.presetReady = false;
-    state.awaitingPreset = false;
-    outlet(4, ["play_gate", 0]);
+    state.pendingClearReason = clearReason;
+    if (clearReason === "auto") {
+        state.presetReady = false;
+        state.awaitingPreset = false;
+    }
+    setPlayGate(0);
     setPhase("clearing_dataset");
     outlet(4, "clear_map");
 }
@@ -831,6 +884,7 @@ function handleDatasetCleared() {
     emitModelStatus();
     emitEvent("dataset_cleared", []);
     emitState(["dataset", "size", 0]);
+    emitDatasetReadinessState();
     emitStateEvent("dataset_cleared", []);
     emitTrainingState();
 
@@ -841,17 +895,11 @@ function handleDatasetCleared() {
     } else if (reason === "auto" && state.mode === "auto" && state.selectedPatterns.length > 0) {
         beginAutoBuild();
     } else if (state.mode === "semi") {
-        if (validPattern(state.currentPattern)) {
-            selectPattern(state.currentPattern);
-        } else {
-            setPhase("semi_waiting");
-        }
+        setPhase(state.presetReady && validPattern(state.currentPattern) ?
+            "semi_ready" : "semi_waiting");
     } else if (state.mode === "free") {
-        if (validPattern(state.currentPattern)) {
-            selectPattern(state.currentPattern);
-        } else {
-            setPhase("free_waiting");
-        }
+        setPhase(state.presetReady && validPattern(state.currentPattern) ?
+            "free_ready" : "free_waiting");
     } else {
         setPhase("idle");
     }
@@ -1076,6 +1124,8 @@ function commitPendingPoint() {
     emitUi(["batch_progress", state.batchCurrent, state.batchTotal]);
     emitState(["dataset", "size", state.datasetSize]);
     emitStateEvent("point_added", [pointId]);
+    emitDatasetReadinessState();
+    emitTrainingState();
     emitModelState();
 
     if (state.queue.length === 0) {
@@ -1152,6 +1202,7 @@ function notifydeleted() {
     stopEmitTask();
     cancelTrainingTask();
     cancelOverlayTask();
+    cancelCreatingMapFeedback();
 }
 
 function scheduleTrainingStep(step) {
@@ -1292,11 +1343,13 @@ function handleExternalTrainingError(value) {
     state.stopRequested = false;
     state.pendingTrainingAction = "";
     state.realModelState = "failed";
+    cancelCreatingMapFeedback();
     emitUi(["modelstate", "failed"]);
     emitUi(["training_error", code]);
     emitEvent("engine_training_error", [code]);
     emitStateEvent("engine_training_error", [code]);
     emitModelState();
+    emitTrainingState();
     emitError("training_error", true);
 }
 
@@ -1334,8 +1387,16 @@ function handleLegacyTrain() {
 function beginManagedTraining(mode) {
     var automatic;
     var requestedMode = mode === "continue" ? "continue" : "from_scratch";
+    if (state.creatingMapFeedbackActive) {
+        emitError("operation_in_progress", false);
+        return;
+    }
     if (state.datasetSize <= 0) {
         emitError("empty_dataset", false);
+        return;
+    }
+    if (state.datasetSize <= 1) {
+        emitError("dataset_not_ready", false);
         return;
     }
     if (state.queue.length > 0 || emitTask !== null) {
@@ -1389,7 +1450,7 @@ function beginManagedTraining(mode) {
     state.modelConfigRevision += 1;
     state.realModelState = "training";
 
-    outlet(4, ["play_gate", 0]);
+    setPlayGate(0);
     setPhase("training");
     emitUi(["modelstate", "training"]);
     emitUi(["training_started", state.datasetSize, requestedMode]);
@@ -1397,6 +1458,9 @@ function beginManagedTraining(mode) {
     emitStateEvent("training_started", [state.datasetSize, requestedMode]);
     emitTrainingState();
     emitModelState();
+    if (state.mode !== "auto") {
+        beginCreatingMapFeedback();
+    }
 
     if (requestedMode === "from_scratch") {
         state.modelResetConfirmed = false;
@@ -1466,6 +1530,7 @@ function installModelConfig(config, source) {
     }
     emitMlpState();
     emitModelStatus();
+    emitTrainingState();
 }
 
 function cloneModelConfig(source) {
@@ -1657,9 +1722,11 @@ function handleFitError(roundValue, errorValue) {
     state.stopRequested = false;
     state.pendingTrainingAction = "";
     state.realModelState = "failed";
+    cancelCreatingMapFeedback();
     emitUi(["modelstate", "failed"]);
     emitUi(["training_error", code]);
     emitModelState();
+    emitTrainingState();
     emitError("training_error", true);
 }
 
@@ -1694,14 +1761,22 @@ function finishManagedTraining(reason) {
             setView("explore");
         }
         restoreModePhase();
-        showModelReadyState();
-        outlet(4, ["play_gate", 1]);
+        if (state.creatingMapFeedbackActive) {
+            state.pendingReadyAfterCreatingMap = true;
+            setOverlay("creating_map");
+        } else {
+            showModelReadyState();
+        }
+        setPlayGate(1);
+        emitTrainingState();
     } else if (reason === "architecture_changed") {
+        cancelCreatingMapFeedback();
         state.realModelState = "train_to_start";
         state.architectureDirty = true;
         emitModelState();
         restoreModePhase();
     } else {
+        cancelCreatingMapFeedback();
         state.realModelState = state.modelHasWeights && !state.architectureDirty ?
             "ready" : "train_to_start";
         emitStateEvent("training_stopped", [reason]);
@@ -1729,12 +1804,21 @@ function stopManagedTraining() {
 
 function requestModelReset() {
     if (state.trainingActive) {
+        setPlayGate(0);
         deferTrainingAction("reset_model", "");
         emitError("reset_deferred", false);
         return;
     }
+    if (!state.modelHasWeights) {
+        emitError("model_reset_not_available", false);
+        return;
+    }
+    cancelCreatingMapFeedback();
+    setPlayGate(0);
     state.modelResetConfirmed = false;
     state.pendingTrainingAction = "manual_reset";
+    emitTrainingState();
+    emitOverlayState();
     outlet(4, "reset_model");
 }
 
@@ -1769,6 +1853,7 @@ function handleModelResetDone() {
     } else if (action === "manual_reset") {
         state.pendingTrainingAction = "";
         restoreModePhase();
+        emitTrainingState();
     }
 }
 
@@ -1788,7 +1873,17 @@ function completeControllerResetIfReady() {
     emitUi(["reset_complete"]);
     emitEvent("reset_complete", []);
     emitStateEvent("reset_complete", []);
-    setPhase("idle");
+    emitDatasetReadinessState();
+    emitTrainingState();
+    if (state.mode === "semi") {
+        setPhase(state.presetReady && validPattern(state.currentPattern) ?
+            "semi_ready" : "semi_waiting");
+    } else if (state.mode === "free") {
+        setPhase(state.presetReady && validPattern(state.currentPattern) ?
+            "free_ready" : "free_waiting");
+    } else {
+        setPhase("idle");
+    }
 }
 
 function deferTrainingAction(action, value) {
@@ -1886,6 +1981,7 @@ function overlayForPhase(phase) {
 
 function interactionShouldLock() {
     return state.resetInProgress || state.overlay !== "none" ||
+        state.pendingTrainingAction === "manual_reset" ||
         state.phase === "clearing_dataset" || state.phase === "semi_loading" ||
         state.phase === "free_loading" || state.phase === "semi_building" ||
         state.phase === "free_building";
@@ -1914,6 +2010,49 @@ function showModelReadyState() {
     setOverlay("model_ready");
     overlayTask = new Task(finishModelReadyState, this);
     overlayTask.schedule(DRIFTMAP_MODEL_READY_MS);
+}
+
+function beginCreatingMapFeedback() {
+    cancelCreatingMapFeedback();
+    state.creatingMapFeedbackActive = true;
+    state.pendingReadyAfterCreatingMap = false;
+    emitUi(["creating_map_feedback", 1, state.creatingMapDuration]);
+    setOverlay("creating_map");
+    creatingMapTask = new Task(finishCreatingMapFeedback, this);
+    creatingMapTask.schedule(state.creatingMapDuration);
+}
+
+function finishCreatingMapFeedback() {
+    var showReady = state.pendingReadyAfterCreatingMap;
+    if (creatingMapTask !== null) {
+        creatingMapTask.cancel();
+        creatingMapTask = null;
+    }
+    state.creatingMapFeedbackActive = false;
+    state.pendingReadyAfterCreatingMap = false;
+    emitUi(["creating_map_feedback", 0, state.creatingMapDuration]);
+    emitTrainingState();
+    if (showReady) {
+        showModelReadyState();
+    } else if (state.trainingActive) {
+        setOverlay("training");
+    } else {
+        setOverlay("none");
+    }
+}
+
+function cancelCreatingMapFeedback() {
+    if (creatingMapTask !== null) {
+        creatingMapTask.cancel();
+        creatingMapTask = null;
+    }
+    if (state && state.creatingMapFeedbackActive) {
+        emitUi(["creating_map_feedback", 0, state.creatingMapDuration]);
+    }
+    if (state) {
+        state.creatingMapFeedbackActive = false;
+        state.pendingReadyAfterCreatingMap = false;
+    }
 }
 
 function finishModelReadyState() {
@@ -2025,6 +2164,7 @@ function setMlpParameter(name, args, source) {
     }
     emitMlpState();
     emitModelStatus();
+    emitTrainingState();
     return true;
 }
 
@@ -2132,10 +2272,13 @@ function emitStateEvent(name, args) {
 function emitStateSnapshot() {
     emitState(["ui", "view", state.view]);
     emitState(["ui", "mode", state.mode]);
+    emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+    emitState(["ui", "creating_map_duration", state.creatingMapDuration]);
     emitModelState();
     emitOverlayState();
     emitSlotsState();
     emitState(["dataset", "size", state.datasetSize]);
+    emitDatasetReadinessState();
     emitState(["dataset", "pattern", state.currentPattern]);
     emitState(["dataset", "auto_points", state.autoTotalPoints]);
     emitState(["dataset", "batch_points", state.semiBatchPoints]);
@@ -2218,6 +2361,47 @@ function emitTrainingState() {
     emitState(["training", "fit_round", state.training.fitRound]);
     emitState(["training", "plateau", state.training.plateau]);
     emitState(["training", "patience", state.mlp.patience]);
+    emitState(["training", "state", trainingCommandState()]);
+    emitState(["training", "model_ready", modelReadyForCommands() ? 1 : 0]);
+    emitState(["training", "can_train_from_scratch",
+        datasetReadyForTraining() && !state.trainingActive &&
+        !state.creatingMapFeedbackActive &&
+        state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
+    emitState(["training", "can_continue_training",
+        datasetReadyForTraining() && modelReadyForCommands() &&
+        !state.trainingActive && !state.creatingMapFeedbackActive &&
+        state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
+    emitState(["training", "can_stop_training", state.trainingActive ? 1 : 0]);
+    emitState(["training", "can_reset_model",
+        (state.modelHasWeights || state.trainingActive) &&
+        state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
+}
+
+function datasetReadyForTraining() {
+    return state.datasetSize > 1;
+}
+
+function modelReadyForCommands() {
+    return state.modelHasWeights && !state.architectureDirty;
+}
+
+function emitDatasetReadinessState() {
+    emitState(["dataset", "ready", datasetReadyForTraining() ? 1 : 0]);
+    emitState(["dataset", "map_empty", state.datasetSize === 0 ? 1 : 0]);
+}
+
+function trainingCommandState() {
+    if (state.trainingActive) {
+        return state.trainingMode === "continue" ?
+            "CONTINUING_TRAINING" : "TRAINING_FIRST_MODEL";
+    }
+    if (modelReadyForCommands()) {
+        return "MODEL_READY";
+    }
+    if (datasetReadyForTraining()) {
+        return "DATA_READY";
+    }
+    return "EMPTY";
 }
 
 function emitQuestionnaireState() {
@@ -2424,9 +2608,10 @@ function emitError(code, fatal) {
     }
     if (fatal) {
         stopEmitTask();
+        cancelCreatingMapFeedback();
         state.queue = [];
         setSlotsBlocked(false, true);
-        outlet(4, ["play_gate", 0]);
+        setPlayGate(0);
         setPhase("error");
     }
 }
