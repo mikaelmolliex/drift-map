@@ -14,6 +14,7 @@ var DRIFTMAP_XY_SETTLE_MS = 50;
 var DRIFTMAP_FINAL_SETTLE_MS = 50;
 var DRIFTMAP_MODEL_READY_MS = 900;
 var DRIFTMAP_CREATING_MAP_FEEDBACK_MS = 12000;
+var DRIFTMAP_QUESTIONNAIRE_FAILURE_MS = 4000;
 
 /* One authoritative set of editable MLP defaults. Automatic profiles below
  * are deliberate dataset-size presets, not duplicate default definitions. */

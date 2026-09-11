@@ -958,7 +958,7 @@ function drawQuestionnaireRequirement(width, height) {
     var patterns = viewState.screen === "not_enough_patterns";
     var cancelY = height - 62;
     drawParticleOrb(width * 0.5, 245, 108, "failed");
-    drawStatusText(patterns ? "NOT ENOUGH PATTERNS" : "NOT ENOUGH LIKED PATTERNS",
+    drawStatusText(patterns ? "NOT ENOUGH PATTERNS" : "NOT ENOUGH PATTERNS LIKED",
         width * 0.5, 106, COLORS.warning);
     drawText(String(viewState.statusAvailable) + " / " + String(viewState.statusRequired),
         width * 0.5, cancelY - 12, 14, COLORS.text, "center");

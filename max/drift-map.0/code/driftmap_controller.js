@@ -21,10 +21,20 @@ setoutletassist(5, "State bus for the external Max UI");
 var state = createInitialState();
 var emitTask = null;
 var scheduledStep = null;
+var emitTaskSerial = 0;
+var activeEmitTaskId = 0;
 var trainingTask = null;
 var scheduledTrainingStep = null;
+var scheduledTrainingOperationId = 0;
+var trainingTaskSerial = 0;
+var activeTrainingTaskId = 0;
 var overlayTask = null;
+var overlayTaskSerial = 0;
+var activeOverlayTaskId = 0;
 var creatingMapTask = null;
+var questionnaireReturnTask = null;
+var questionnaireSessionSerial = 0;
+var trainingOperationSerial = 0;
 
 function createInitialState() {
     return {
@@ -49,6 +59,9 @@ function createInitialState() {
         minLikedPatterns: DRIFTMAP_MIN_LIKED_PATTERNS,
         effectiveMinLikedPatterns: 0,
         maxAnchors: DRIFTMAP_MAX_ANCHORS,
+        questionnaireState: "IDLE",
+        questionnaireSessionId: 0,
+        questionnaireReturnSessionId: 0,
         questionnaireActive: false,
         questionnaireCurrentPattern: 0,
         questionnaireAwaitingPreset: false,
@@ -82,6 +95,7 @@ function createInitialState() {
         autoFit: false,
         creatingMapDuration: DRIFTMAP_CREATING_MAP_FEEDBACK_MS,
         creatingMapFeedbackActive: false,
+        creatingMapOperationId: 0,
         pendingReadyAfterCreatingMap: false,
         seed: 1,
         rngState: 1,
@@ -101,10 +115,13 @@ function createInitialState() {
         architectureDirty: false,
         datasetDirty: false,
         modelHasWeights: false,
+        modelReady: false,
+        modelReadyBeforeTraining: false,
         modelResetConfirmed: false,
 
         trainingActive: false,
         trainingMode: "from_scratch",
+        trainingOperationId: 0,
         pendingFitRound: 0,
         fitInFlight: false,
         previousLoss: null,
@@ -234,11 +251,11 @@ function handleCommand(name, args) {
     } else if (name === "add_point") {
         addFreePoint();
     } else if (name === "train") {
-        handleLegacyTrain();
+        handleLegacyTrain(false);
     } else if (name === "train_from_scratch") {
-        beginManagedTraining("from_scratch");
+        beginManagedTraining("from_scratch", false);
     } else if (name === "continue_training") {
-        beginManagedTraining("continue");
+        beginManagedTraining("continue", false);
     } else if (name === "stop_training") {
         stopManagedTraining();
     } else if (name === "reset_model") {
@@ -314,7 +331,7 @@ function isJsuiVisualCommand(name) {
 
 function handleFeedback(name, args) {
     if (name === "preset_ready") {
-        handlePresetReady(args[0]);
+        handlePresetReady(args[0], args[1]);
     } else if (name === "end_of_bank") {
         handleEndOfBank(args[0]);
     } else if (name === "questionnaire_error" || name === "preset_timeout") {
@@ -330,9 +347,9 @@ function handleFeedback(name, args) {
     } else if (name === "mlp_config_applied") {
         handleModelConfigApplied(args[0]);
     } else if (name === "fit_result") {
-        handleFitResult(args[0], args[1]);
+        handleFitResult(args[0], args[1], args[2]);
     } else if (name === "fit_error") {
-        handleFitError(args[0], args[1]);
+        handleFitError(args[0], args[1], args[2]);
     } else if (name === "training_started") {
         emitEvent("engine_training_started", args);
         emitStateEvent("engine_training_started", args);
@@ -368,6 +385,7 @@ function resetController() {
     cancelTrainingTask();
     cancelOverlayTask();
     cancelCreatingMapFeedback();
+    cancelQuestionnaireReturn();
     state = createInitialState();
     state.view = preserved.view;
     state.mode = preserved.mode;
@@ -421,6 +439,11 @@ function setMode(value) {
         emitError("invalid_mode", false);
         return;
     }
+    if (state.questionnaireState === "FAILED" &&
+            (state.phase === "not_enough_patterns" || state.phase === "not_enough_likes")) {
+        emitError("operation_in_progress", false);
+        return;
+    }
 
     /* A repeated mode message is navigation noise, not a request to reload
      * the current preset or cancel work already running in that mode. */
@@ -444,13 +467,13 @@ function applyMode(next) {
     var readyPattern = state.presetReady && !state.awaitingPreset &&
         validPattern(state.currentPattern) ? state.currentPattern : 0;
     stopEmitTask();
+    cancelQuestionnaireReturn();
     state.queue = [];
     state.batchCurrent = 0;
     state.batchTotal = 0;
     state.pendingClearReason = "";
     state.awaitingPreset = false;
     state.presetReady = readyPattern > 0;
-    setPlayGate(0);
     state.mode = next;
     emitUi(["mode", next]);
     emitState(["ui", "mode", next]);
@@ -477,7 +500,7 @@ function applyMode(next) {
             setPhase("free_waiting");
         }
     }
-    emitModelState();
+    updateApplicationState();
 }
 
 function returnToModeMenu() {
@@ -496,9 +519,15 @@ function setView(value) {
         emitError("invalid_view", false);
         return;
     }
+    if (state.questionnaireState === "FAILED" &&
+            (state.phase === "not_enough_patterns" || state.phase === "not_enough_likes")) {
+        emitError("operation_in_progress", false);
+        return;
+    }
     state.view = next;
     emitUi(["view", next]);
     emitState(["ui", "view", next]);
+    updateApplicationState();
 }
 
 function setModelBypass(value) {
@@ -586,6 +615,7 @@ function setSlotList(args) {
     if (interrupted) {
         stopEmitTask();
         setSlotsBlocked(false, true);
+        state.questionnaireState = "CANCELLED";
         resetQuestionnaireSession();
         emitUi(["questionnaire_reset"]);
         emitUi(["questionnaire_total", next.length]);
@@ -649,8 +679,20 @@ function startQuestionnaire() {
         emitError("invalid_mode", false);
         return;
     }
+    if (state.questionnaireActive || state.trainingActive ||
+            state.creatingMapFeedbackActive || state.resetInProgress ||
+            state.queue.length > 0 || emitTask !== null ||
+            isQuestionnairePhase(state.phase) || state.phase === "clearing_dataset" ||
+            state.phase === "auto_building") {
+        emitError("operation_in_progress", false);
+        return;
+    }
     stopEmitTask();
+    cancelQuestionnaireReturn();
     resetQuestionnaireSession();
+    questionnaireSessionSerial += 1;
+    state.questionnaireSessionId = questionnaireSessionSerial;
+    state.questionnaireState = "RUNNING";
     state.availablePatternCount = state.slotList.length;
     state.effectiveMinLikedPatterns = Math.min(state.minLikedPatterns, state.slotList.length);
     state.answers = filledAnswers(state.slotList.length);
@@ -666,15 +708,8 @@ function startQuestionnaire() {
     emitStateEvent("questionnaire_started", []);
     emitQuestionnaireState();
     if (state.slotList.length < DRIFTMAP_MIN_AVAILABLE_PATTERNS) {
-        state.questionnaireActive = false;
-        setSlotsBlocked(false, true);
-        emitUi(["not_enough_patterns", state.slotList.length,
-            DRIFTMAP_MIN_AVAILABLE_PATTERNS]);
-        emitEvent("not_enough_patterns", [state.slotList.length,
-            DRIFTMAP_MIN_AVAILABLE_PATTERNS]);
-        emitQuestionnaireState();
-        emitError("not_enough_patterns", false);
-        setPhase("not_enough_patterns");
+        failQuestionnaire("not_enough_patterns", state.slotList.length,
+            DRIFTMAP_MIN_AVAILABLE_PATTERNS);
         return;
     }
     loadPattern(state.slotList[0], "questionnaire_loading");
@@ -704,6 +739,76 @@ function cancelQuestionnaire() {
         emitError("questionnaire_not_active", false);
         return;
     }
+    if (state.questionnaireState !== "FAILED") {
+        state.questionnaireState = "CANCELLED";
+    }
+    returnToExploreFromQuestionnaire("cancel");
+}
+
+function failQuestionnaire(phase, available, required) {
+    state.questionnaireActive = false;
+    state.questionnaireState = "FAILED";
+    state.selectedPatterns = [];
+    setSlotsBlocked(false, true);
+    invalidateModelAfterQuestionnaireFailure();
+    emitUi([phase, available, required]);
+    emitEvent(phase, [available, required]);
+    emitQuestionnaireState();
+    emitError(phase, false);
+    setPhase(phase);
+    scheduleQuestionnaireReturn();
+}
+
+function invalidateModelAfterQuestionnaireFailure() {
+    state.modelHasWeights = false;
+    state.modelReady = false;
+    state.modelReadyBeforeTraining = false;
+    state.realModelState = "train_to_start";
+    state.architectureDirty = false;
+    state.datasetDirty = state.datasetSize > 0;
+    resetTrainingMetrics();
+    setPlayGate(0);
+    emitUi(["modelstate", "empty"]);
+    emitModelStatus();
+    emitTrainingState();
+}
+
+function scheduleQuestionnaireReturn() {
+    var expectedSession;
+    cancelQuestionnaireReturn();
+    state.questionnaireReturnSessionId = state.questionnaireSessionId;
+    expectedSession = state.questionnaireReturnSessionId;
+    questionnaireReturnTask = new Task(function () {
+        runQuestionnaireReturn(expectedSession);
+    }, this);
+    questionnaireReturnTask.schedule(DRIFTMAP_QUESTIONNAIRE_FAILURE_MS);
+}
+
+function runQuestionnaireReturn(expected) {
+    if (state.questionnaireState !== "FAILED" ||
+            expected !== state.questionnaireReturnSessionId ||
+            expected !== state.questionnaireSessionId ||
+            (state.phase !== "not_enough_patterns" && state.phase !== "not_enough_likes")) {
+        emitEvent("stale_questionnaire_timer_ignored",
+            [expected, state.questionnaireSessionId]);
+        return;
+    }
+    questionnaireReturnTask = null;
+    returnToExploreFromQuestionnaire("timeout");
+}
+
+function cancelQuestionnaireReturn() {
+    if (questionnaireReturnTask !== null) {
+        questionnaireReturnTask.cancel();
+        questionnaireReturnTask = null;
+    }
+    if (state) {
+        state.questionnaireReturnSessionId = 0;
+    }
+}
+
+function returnToExploreFromQuestionnaire(reason) {
+    cancelQuestionnaireReturn();
     stopEmitTask();
     setSlotsBlocked(false, true);
     resetQuestionnaireSession();
@@ -711,11 +816,11 @@ function cancelQuestionnaire() {
     emitUi(["questionnaire_total", state.slotList.length]);
     emitUi(["questionnaire_progress", 0, state.slotList.length, 0, 0]);
     emitUi(["liked"]);
-    emitEvent("questionnaire_cancelled", []);
-    emitStateEvent("questionnaire_cancelled", []);
+    emitEvent("questionnaire_cancelled", [reason]);
+    emitStateEvent("questionnaire_cancelled", [reason]);
     emitQuestionnaireState();
-    setView("explore");
     setPhase("idle");
+    setView("explore");
 }
 
 function saveAnswer(value) {
@@ -775,6 +880,7 @@ function finishQuestionnaire() {
     var i;
     var selectedCount;
     state.questionnaireActive = false;
+    state.questionnaireState = "SUCCEEDED";
     state.phase = "questionnaire_complete";
     state.likedPatterns = [];
     for (i = 0; i < state.answers.length; i += 1) {
@@ -788,25 +894,15 @@ function finishQuestionnaire() {
     emitQuestionnaireState();
 
     if (state.availablePatternCount < DRIFTMAP_MIN_AVAILABLE_PATTERNS) {
-        setSlotsBlocked(false, true);
-        emitUi(["not_enough_patterns", state.availablePatternCount,
-            DRIFTMAP_MIN_AVAILABLE_PATTERNS]);
-        emitEvent("not_enough_patterns", [state.availablePatternCount,
-            DRIFTMAP_MIN_AVAILABLE_PATTERNS]);
-        emitError("not_enough_patterns", false);
-        setPhase("not_enough_patterns");
+        failQuestionnaire("not_enough_patterns", state.availablePatternCount,
+            DRIFTMAP_MIN_AVAILABLE_PATTERNS);
         return;
     }
 
     state.effectiveMinLikedPatterns = Math.min(state.minLikedPatterns, state.slotList.length);
     if (state.likedPatterns.length < state.effectiveMinLikedPatterns) {
-        setSlotsBlocked(false, true);
-        emitUi(["not_enough_likes", state.likedPatterns.length,
-            state.effectiveMinLikedPatterns]);
-        emitEvent("not_enough_likes", [state.likedPatterns.length,
-            state.effectiveMinLikedPatterns]);
-        emitError("not_enough_likes", false);
-        setPhase("not_enough_likes");
+        failQuestionnaire("not_enough_likes", state.likedPatterns.length,
+            state.effectiveMinLikedPatterns);
         return;
     }
 
@@ -849,12 +945,16 @@ function requestDatasetClear(reason) {
     }
     stopEmitTask();
     cancelCreatingMapFeedback();
+    cancelQuestionnaireReturn();
     state.queue = [];
     state.pendingClearReason = clearReason;
     if (clearReason === "auto") {
         state.presetReady = false;
         state.awaitingPreset = false;
     }
+    state.modelReady = false;
+    state.modelReadyBeforeTraining = false;
+    state.realModelState = "train_to_start";
     setPlayGate(0);
     setPhase("clearing_dataset");
     outlet(4, "clear_map");
@@ -871,6 +971,8 @@ function handleDatasetCleared() {
     state.batchTotal = 0;
     state.pendingClearReason = fullReset ? "reset" : "";
     state.modelHasWeights = false;
+    state.modelReady = false;
+    state.modelReadyBeforeTraining = false;
     state.realModelState = "train_to_start";
     state.datasetDirty = false;
     resetTrainingMetrics();
@@ -949,7 +1051,7 @@ function finishAutoBuild() {
     }
     emitUi(["mapping_progress", state.datasetSize, state.autoTargetSize, 1]);
     emitEvent("dataset_complete", [state.datasetSize]);
-    beginManagedTraining("from_scratch");
+    beginManagedTraining("from_scratch", true);
 }
 
 function selectPattern(value) {
@@ -985,7 +1087,7 @@ function mapHere() {
     var i;
     var axis;
     var point;
-    if (state.mode !== "semi") {
+    if (state.mode !== "semi" || !manualModeActive()) {
         emitError("invalid_mode", false);
         return;
     }
@@ -1021,7 +1123,7 @@ function mapHere() {
 }
 
 function addFreePoint() {
-    if (state.mode !== "free") {
+    if (state.mode !== "free" || !manualModeActive()) {
         emitError("invalid_mode", false);
         return;
     }
@@ -1159,12 +1261,12 @@ function finishBatch() {
     } else if (state.mode === "semi") {
         setPhase("semi_ready");
         if (state.autoFit) {
-            handleLegacyTrain();
+            handleLegacyTrain(true);
         }
     } else if (state.mode === "free") {
         setPhase("free_ready");
         if (state.autoFit) {
-            handleLegacyTrain();
+            handleLegacyTrain(true);
         }
     }
 }
@@ -1175,6 +1277,7 @@ function cancelScheduledTask() {
         emitTask = null;
     }
     scheduledStep = null;
+    activeEmitTaskId = 0;
 }
 
 function stopEmitTask() {
@@ -1183,16 +1286,26 @@ function stopEmitTask() {
 }
 
 function scheduleStep(step, delayMs) {
+    var taskId;
     cancelScheduledTask();
     scheduledStep = step;
-    emitTask = new Task(runScheduledStep, this);
+    emitTaskSerial += 1;
+    activeEmitTaskId = emitTaskSerial;
+    taskId = activeEmitTaskId;
+    emitTask = new Task(function () {
+        runScheduledStep(taskId, step);
+    }, this);
     emitTask.schedule(Math.max(0, delayMs));
 }
 
-function runScheduledStep() {
-    var step = scheduledStep;
+function runScheduledStep(taskId, step) {
+    if (taskId !== activeEmitTaskId) {
+        emitEvent("stale_point_task_ignored", [taskId, activeEmitTaskId]);
+        return;
+    }
     emitTask = null;
     scheduledStep = null;
+    activeEmitTaskId = 0;
     if (step !== null) {
         step();
     }
@@ -1203,19 +1316,36 @@ function notifydeleted() {
     cancelTrainingTask();
     cancelOverlayTask();
     cancelCreatingMapFeedback();
+    cancelQuestionnaireReturn();
 }
 
 function scheduleTrainingStep(step) {
+    var taskId;
+    var operationId;
     cancelTrainingTask();
     scheduledTrainingStep = step;
-    trainingTask = new Task(runScheduledTrainingStep, this);
+    scheduledTrainingOperationId = state.trainingOperationId;
+    trainingTaskSerial += 1;
+    activeTrainingTaskId = trainingTaskSerial;
+    taskId = activeTrainingTaskId;
+    operationId = scheduledTrainingOperationId;
+    trainingTask = new Task(function () {
+        runScheduledTrainingStep(taskId, operationId, step);
+    }, this);
     trainingTask.schedule(0);
 }
 
-function runScheduledTrainingStep() {
-    var step = scheduledTrainingStep;
+function runScheduledTrainingStep(taskId, operationId, step) {
+    if (taskId !== activeTrainingTaskId ||
+            operationId !== state.trainingOperationId || !state.trainingActive) {
+        emitEvent("stale_training_task_ignored",
+            [taskId, activeTrainingTaskId, operationId, state.trainingOperationId]);
+        return;
+    }
     trainingTask = null;
     scheduledTrainingStep = null;
+    scheduledTrainingOperationId = 0;
+    activeTrainingTaskId = 0;
     if (step !== null) {
         step();
     }
@@ -1227,6 +1357,8 @@ function cancelTrainingTask() {
         trainingTask = null;
     }
     scheduledTrainingStep = null;
+    scheduledTrainingOperationId = 0;
+    activeTrainingTaskId = 0;
 }
 
 function loadPattern(patternId, phase) {
@@ -1258,8 +1390,9 @@ function loadPattern(patternId, phase) {
     outlet(1, patternId);
 }
 
-function handlePresetReady(value) {
+function handlePresetReady(value, sessionValue) {
     var patternId = toInteger(value);
+    var sessionId = toInteger(sessionValue);
     var externallySelected = !state.questionnaireActive && !state.awaitingPreset &&
         ((state.mode === "semi" || state.mode === "free") ||
         (state.mode === "auto" && state.phase === "idle" &&
@@ -1271,6 +1404,12 @@ function handlePresetReady(value) {
             state.currentPattern
         ]);
         emitError("preset_not_ready", false);
+        return;
+    }
+    if (isFiniteNumber(sessionId) && state.questionnaireActive &&
+            sessionId !== state.questionnaireSessionId) {
+        emitEvent("stale_questionnaire_feedback_ignored",
+            [sessionId, state.questionnaireSessionId, patternId]);
         return;
     }
     if (externallySelected && state.slotListDeclared &&
@@ -1343,11 +1482,13 @@ function handleExternalTrainingError(value) {
     state.stopRequested = false;
     state.pendingTrainingAction = "";
     state.realModelState = "failed";
+    restoreModelAfterTrainingFailure();
     cancelCreatingMapFeedback();
     emitUi(["modelstate", "failed"]);
     emitUi(["training_error", code]);
     emitEvent("engine_training_error", [code]);
     emitStateEvent("engine_training_error", [code]);
+    setPlayGate(state.modelReady ? 1 : 0);
     emitModelState();
     emitTrainingState();
     emitError("training_error", true);
@@ -1355,7 +1496,9 @@ function handleExternalTrainingError(value) {
 
 function abortQuestionnaireWithError(reason) {
     stopEmitTask();
+    cancelQuestionnaireReturn();
     setSlotsBlocked(false, true);
+    state.questionnaireState = "FAILED";
     resetQuestionnaireSession();
     emitUi(["questionnaire_reset"]);
     emitUi(["questionnaire_total", state.slotList.length]);
@@ -1365,28 +1508,32 @@ function abortQuestionnaireWithError(reason) {
     emitError(reason === "preset_timeout" ? "preset_timeout" : "questionnaire_error", true);
 }
 
-function handleLegacyTrain() {
+function handleLegacyTrain(internalRequest) {
     var automatic;
     if (state.mode === "auto") {
-        beginManagedTraining("from_scratch");
+        beginManagedTraining("from_scratch", !!internalRequest);
     } else if (state.mode === "semi") {
         automatic = getAutomaticProfile(state.datasetSize);
         if (state.modelHasWeights && !state.architectureDirty &&
                 state.mlp !== null && sameArchitecture(state.mlp, automatic)) {
-            beginManagedTraining("continue");
+            beginManagedTraining("continue", !!internalRequest);
         } else {
-            beginManagedTraining("from_scratch");
+            beginManagedTraining("from_scratch", !!internalRequest);
         }
     } else if (state.mode === "free") {
-        beginManagedTraining("from_scratch");
+        beginManagedTraining("from_scratch", !!internalRequest);
     } else {
         emitError("invalid_mode", false);
     }
 }
 
-function beginManagedTraining(mode) {
+function beginManagedTraining(mode, internalRequest) {
     var automatic;
     var requestedMode = mode === "continue" ? "continue" : "from_scratch";
+    if (!internalRequest && !manualModeActive()) {
+        emitError("manual_training_not_available", false);
+        return;
+    }
     if (state.creatingMapFeedbackActive) {
         emitError("operation_in_progress", false);
         return;
@@ -1424,14 +1571,20 @@ function beginManagedTraining(mode) {
     }
 
     if (requestedMode === "continue" &&
-            (!state.modelHasWeights || state.architectureDirty)) {
+            !modelReadyForCommands()) {
         emitError("architecture_reset_required", false);
         return;
     }
 
     setSlotsBlocked(true, false);
+    trainingOperationSerial += 1;
+    state.trainingOperationId = trainingOperationSerial;
     state.trainingActive = true;
     state.trainingMode = requestedMode;
+    state.modelReadyBeforeTraining = requestedMode === "continue" && modelReadyForCommands();
+    if (requestedMode === "from_scratch") {
+        state.modelReady = false;
+    }
     state.pendingFitRound = 0;
     state.fitInFlight = false;
     if (requestedMode === "from_scratch") {
@@ -1451,16 +1604,22 @@ function beginManagedTraining(mode) {
     state.realModelState = "training";
 
     setPlayGate(0);
-    setPhase("training");
+    state.phase = "training";
+    emitUi(["state", "training"]);
     emitUi(["modelstate", "training"]);
-    emitUi(["training_started", state.datasetSize, requestedMode]);
-    emitEvent("training_started", [state.datasetSize, requestedMode]);
-    emitStateEvent("training_started", [state.datasetSize, requestedMode]);
+    if (state.mode !== "auto") {
+        beginCreatingMapFeedback(state.trainingOperationId);
+    } else {
+        setOverlay("training");
+    }
+    emitUi(["training_started", state.datasetSize, requestedMode,
+        state.trainingOperationId]);
+    emitEvent("training_started", [state.datasetSize, requestedMode,
+        state.trainingOperationId]);
+    emitStateEvent("training_started", [state.datasetSize, requestedMode,
+        state.trainingOperationId]);
     emitTrainingState();
     emitModelState();
-    if (state.mode !== "auto") {
-        beginCreatingMapFeedback();
-    }
 
     if (requestedMode === "from_scratch") {
         state.modelResetConfirmed = false;
@@ -1530,7 +1689,7 @@ function installModelConfig(config, source) {
     }
     emitMlpState();
     emitModelStatus();
-    emitTrainingState();
+    updateApplicationState();
 }
 
 function cloneModelConfig(source) {
@@ -1635,13 +1794,15 @@ function requestNextFit() {
     emitTrainingState();
 }
 
-function handleFitResult(roundValue, lossValue) {
+function handleFitResult(roundValue, lossValue, operationValue) {
     var round = toInteger(roundValue);
     var loss = Number(lossValue);
+    var operationId = toInteger(operationValue);
     var improvement = 0;
     var previousBest;
     var stopReason;
-    if (!state.trainingActive || !state.fitInFlight ||
+    if ((isFiniteNumber(operationId) && operationId !== state.trainingOperationId) ||
+            !state.trainingActive || !state.fitInFlight ||
             round !== state.pendingFitRound || !isFiniteNumber(loss)) {
         emitError("stale_fit_result", false);
         return;
@@ -1710,10 +1871,12 @@ function evaluateConvergence() {
     return "";
 }
 
-function handleFitError(roundValue, errorValue) {
+function handleFitError(roundValue, errorValue, operationValue) {
     var round = toInteger(roundValue);
     var code = String(errorValue || "unknown");
-    if (!state.trainingActive || !state.fitInFlight || round !== state.pendingFitRound) {
+    var operationId = toInteger(operationValue);
+    if ((isFiniteNumber(operationId) && operationId !== state.trainingOperationId) ||
+            !state.trainingActive || !state.fitInFlight || round !== state.pendingFitRound) {
         emitError("stale_fit_result", false);
         return;
     }
@@ -1722,9 +1885,11 @@ function handleFitError(roundValue, errorValue) {
     state.stopRequested = false;
     state.pendingTrainingAction = "";
     state.realModelState = "failed";
+    restoreModelAfterTrainingFailure();
     cancelCreatingMapFeedback();
     emitUi(["modelstate", "failed"]);
     emitUi(["training_error", code]);
+    setPlayGate(state.modelReady ? 1 : 0);
     emitModelState();
     emitTrainingState();
     emitError("training_error", true);
@@ -1749,6 +1914,8 @@ function finishManagedTraining(reason) {
     if (successful && action === "") {
         state.architectureDirty = false;
         state.datasetDirty = false;
+        state.modelReady = true;
+        state.modelReadyBeforeTraining = false;
         state.realModelState = "ready";
         emitUi(["training_done", reason, state.training.fitRound, state.training.bestLoss]);
         emitEvent("training_done", [reason, state.training.fitRound, state.training.bestLoss]);
@@ -1760,30 +1927,41 @@ function finishManagedTraining(reason) {
         if (state.mode === "auto") {
             setView("explore");
         }
-        restoreModePhase();
         if (state.creatingMapFeedbackActive) {
+            restoreModePhaseWithoutOverlay();
             state.pendingReadyAfterCreatingMap = true;
             setOverlay("creating_map");
         } else {
+            restoreModePhase();
             showModelReadyState();
         }
         setPlayGate(1);
         emitTrainingState();
     } else if (reason === "architecture_changed") {
         cancelCreatingMapFeedback();
+        state.modelReady = false;
+        state.modelReadyBeforeTraining = false;
         state.realModelState = "train_to_start";
         state.architectureDirty = true;
         emitModelState();
         restoreModePhase();
     } else {
         cancelCreatingMapFeedback();
-        state.realModelState = state.modelHasWeights && !state.architectureDirty ?
+        restoreModelAfterTrainingFailure();
+        state.realModelState = state.modelReady && !state.architectureDirty ?
             "ready" : "train_to_start";
         emitStateEvent("training_stopped", [reason]);
         emitModelState();
         restoreModePhase();
     }
     executeDeferredAction(action, actionValue);
+}
+
+function restoreModelAfterTrainingFailure() {
+    /* FluCoMa trains in place and exposes no rollback acknowledgement here,
+     * so a pre-operation model cannot be proven usable after an error. */
+    state.modelReady = false;
+    state.modelReadyBeforeTraining = false;
 }
 
 function requestTrainingStop() {
@@ -1799,14 +1977,20 @@ function requestTrainingStop() {
 }
 
 function stopManagedTraining() {
+    if (!manualModeActive()) {
+        emitError("manual_training_not_available", false);
+        return;
+    }
     requestTrainingStop();
 }
 
 function requestModelReset() {
+    if (!manualModeActive()) {
+        emitError("manual_training_not_available", false);
+        return;
+    }
     if (state.trainingActive) {
-        setPlayGate(0);
-        deferTrainingAction("reset_model", "");
-        emitError("reset_deferred", false);
+        emitError("model_reset_not_available", false);
         return;
     }
     if (!state.modelHasWeights) {
@@ -1815,6 +1999,8 @@ function requestModelReset() {
     }
     cancelCreatingMapFeedback();
     setPlayGate(0);
+    state.modelReady = false;
+    state.realModelState = "train_to_start";
     state.modelResetConfirmed = false;
     state.pendingTrainingAction = "manual_reset";
     emitTrainingState();
@@ -1825,6 +2011,8 @@ function requestModelReset() {
 function handleModelResetDone() {
     var action = state.pendingTrainingAction;
     state.modelHasWeights = false;
+    state.modelReady = false;
+    state.modelReadyBeforeTraining = false;
     state.datasetDirty = false;
     state.modelResetConfirmed = true;
     state.appliedConfigRevision = -1;
@@ -1915,6 +2103,21 @@ function restoreModePhase() {
     }
 }
 
+function restoreModePhaseWithoutOverlay() {
+    if (state.mode === "semi") {
+        state.phase = state.presetReady && validPattern(state.currentPattern) ?
+            "semi_ready" : "semi_waiting";
+        emitUi(["state", "semi"]);
+    } else if (state.mode === "free") {
+        state.phase = state.presetReady && validPattern(state.currentPattern) ?
+            "free_ready" : "free_waiting";
+        emitUi(["state", "free"]);
+    } else {
+        state.phase = "idle";
+        emitUi(["state", "idle"]);
+    }
+}
+
 function receivePosition(args) {
     var result = [];
     var i;
@@ -1935,6 +2138,7 @@ function receivePosition(args) {
     state.positionValid = true;
     /* `position` is reserved by Max UI boxes and moves a jsui object. */
     emitUi(["coordinates"].concat(result));
+    updateApplicationState();
 }
 
 function setPhase(phase) {
@@ -1997,6 +2201,22 @@ function setOverlay(value) {
     emitUi(["overlay", next]);
     emitState(["ui", "overlay", next]);
     emitState(["ui", "interaction_locked", state.interactionLocked ? 1 : 0]);
+    updateApplicationState();
+}
+
+function updateApplicationState() {
+    synchronizePlayGate();
+    emitModelState();
+    emitTrainingState();
+    emitQuestionnaireState();
+}
+
+function synchronizePlayGate() {
+    var enabled = modelReadyForCommands() && !state.trainingActive &&
+        !state.resetInProgress && state.pendingTrainingAction !== "manual_reset";
+    if (state.playGate !== enabled) {
+        setPlayGate(enabled ? 1 : 0);
+    }
 }
 
 function emitOverlayState() {
@@ -2006,34 +2226,54 @@ function emitOverlayState() {
 }
 
 function showModelReadyState() {
+    var taskId;
     cancelOverlayTask();
     setOverlay("model_ready");
-    overlayTask = new Task(finishModelReadyState, this);
+    overlayTaskSerial += 1;
+    activeOverlayTaskId = overlayTaskSerial;
+    taskId = activeOverlayTaskId;
+    overlayTask = new Task(function () {
+        finishModelReadyState(taskId);
+    }, this);
     overlayTask.schedule(DRIFTMAP_MODEL_READY_MS);
 }
 
-function beginCreatingMapFeedback() {
-    cancelCreatingMapFeedback();
+function beginCreatingMapFeedback(operationId) {
+    if (state.creatingMapFeedbackActive) {
+        emitEvent("duplicate_creating_map_ignored", [operationId]);
+        return false;
+    }
     state.creatingMapFeedbackActive = true;
+    state.creatingMapOperationId = operationId;
     state.pendingReadyAfterCreatingMap = false;
     emitUi(["creating_map_feedback", 1, state.creatingMapDuration]);
     setOverlay("creating_map");
-    creatingMapTask = new Task(finishCreatingMapFeedback, this);
+    creatingMapTask = new Task(function () {
+        finishCreatingMapFeedback(operationId);
+    }, this);
     creatingMapTask.schedule(state.creatingMapDuration);
+    return true;
 }
 
-function finishCreatingMapFeedback() {
+function finishCreatingMapFeedback(operationId) {
     var showReady = state.pendingReadyAfterCreatingMap;
+    if (!state.creatingMapFeedbackActive ||
+            operationId !== state.creatingMapOperationId) {
+        emitEvent("stale_creating_map_timer_ignored",
+            [operationId, state.creatingMapOperationId]);
+        return;
+    }
     if (creatingMapTask !== null) {
         creatingMapTask.cancel();
         creatingMapTask = null;
     }
     state.creatingMapFeedbackActive = false;
+    state.creatingMapOperationId = 0;
     state.pendingReadyAfterCreatingMap = false;
     emitUi(["creating_map_feedback", 0, state.creatingMapDuration]);
-    emitTrainingState();
     if (showReady) {
         showModelReadyState();
+        emitModelStatus();
     } else if (state.trainingActive) {
         setOverlay("training");
     } else {
@@ -2051,15 +2291,21 @@ function cancelCreatingMapFeedback() {
     }
     if (state) {
         state.creatingMapFeedbackActive = false;
+        state.creatingMapOperationId = 0;
         state.pendingReadyAfterCreatingMap = false;
     }
 }
 
-function finishModelReadyState() {
+function finishModelReadyState(taskId) {
+    if (taskId !== activeOverlayTaskId) {
+        emitEvent("stale_ready_timer_ignored", [taskId, activeOverlayTaskId]);
+        return;
+    }
     if (overlayTask !== null) {
         overlayTask.cancel();
         overlayTask = null;
     }
+    activeOverlayTaskId = 0;
     if (state.overlay === "model_ready") {
         setOverlay("none");
     }
@@ -2070,6 +2316,7 @@ function cancelOverlayTask() {
         overlayTask.cancel();
         overlayTask = null;
     }
+    activeOverlayTaskId = 0;
 }
 
 function setSeed(value) {
@@ -2164,7 +2411,7 @@ function setMlpParameter(name, args, source) {
     }
     emitMlpState();
     emitModelStatus();
-    emitTrainingState();
+    updateApplicationState();
     return true;
 }
 
@@ -2230,23 +2477,20 @@ function emitModelStatus() {
     var uiState;
     if (state.architectureDirty) {
         status = "reset_required";
-    } else if (state.modelHasWeights && !state.datasetDirty && !state.architectureDirty) {
+    } else if (modelReadyForCommands()) {
         status = "trained";
     } else {
         status = "untrained";
     }
     emitUi(["model_status", status]);
-    if (state.trainingActive) {
+    if (state.trainingActive || state.creatingMapFeedbackActive) {
         uiState = "training";
-        state.realModelState = "training";
     } else if (state.realModelState === "failed") {
         uiState = "failed";
-    } else if (state.modelHasWeights) {
+    } else if (modelReadyForCommands()) {
         uiState = "ready";
-        state.realModelState = "ready";
     } else {
         uiState = "empty";
-        state.realModelState = "train_to_start";
     }
     emitUi(["modelstate", uiState]);
     emitModelState();
@@ -2303,6 +2547,9 @@ function emitSlotsState() {
 function emitModelState() {
     var display = modelDisplayState();
     emitState(["ui", "model", display]);
+    emitState(["ui", "model_state", modelLifecycleState()]);
+    emitState(["ui", "application_mode", applicationModeState()]);
+    emitState(["ui", "temporary_state", temporaryUiState()]);
     emitState(["status_text", statusTextFor(display)]);
 }
 
@@ -2310,22 +2557,24 @@ function modelDisplayState() {
     if (state.modelBypass) {
         return "off";
     }
-    if (state.trainingActive || state.realModelState === "training") {
+    if (state.trainingActive || state.creatingMapFeedbackActive ||
+            state.realModelState === "training") {
         return "training";
     }
     if (state.realModelState === "failed") {
         return "failed";
     }
-    if (state.modelHasWeights && !state.architectureDirty && !state.datasetDirty &&
-            state.realModelState === "ready") {
+    if (modelReadyForCommands()) {
         return "ready";
     }
     return "train_to_start";
 }
 
 function statusTextFor(display) {
-    var modeLabel = state.mode === "semi" ? "GUIDED" :
-        (state.mode === "free" ? "FREE MAPPING" : "AUTONOMOUS");
+    var modeLabel = applicationModeState();
+    if (state.creatingMapFeedbackActive || state.overlay === "creating_map") {
+        return modeLabel + " • CREATING MAP";
+    }
     if (display === "off") {
         return "MODEL OFF";
     }
@@ -2356,25 +2605,30 @@ function emitMlpState() {
 }
 
 function emitTrainingState() {
+    var manualMode = manualModeActive();
     emitState(["training", "current_loss", nullableAtom(state.training.currentLoss)]);
     emitState(["training", "best_loss", nullableAtom(state.training.bestLoss)]);
     emitState(["training", "fit_round", state.training.fitRound]);
     emitState(["training", "plateau", state.training.plateau]);
     emitState(["training", "patience", state.mlp.patience]);
+    emitState(["training", "operation_id", state.trainingOperationId]);
+    emitState(["training", "operation_type", state.trainingMode]);
     emitState(["training", "state", trainingCommandState()]);
     emitState(["training", "model_ready", modelReadyForCommands() ? 1 : 0]);
     emitState(["training", "can_train_from_scratch",
-        datasetReadyForTraining() && !state.trainingActive &&
+        manualMode && datasetReadyForTraining() && !state.trainingActive &&
         !state.creatingMapFeedbackActive &&
         state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
     emitState(["training", "can_continue_training",
-        datasetReadyForTraining() && modelReadyForCommands() &&
+        manualMode && datasetReadyForTraining() && modelReadyForCommands() &&
         !state.trainingActive && !state.creatingMapFeedbackActive &&
         state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
-    emitState(["training", "can_stop_training", state.trainingActive ? 1 : 0]);
+    emitState(["training", "can_stop_training",
+        manualMode && state.trainingActive ? 1 : 0]);
     emitState(["training", "can_reset_model",
-        (state.modelHasWeights || state.trainingActive) &&
+        manualMode && state.modelHasWeights && !state.trainingActive &&
         state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
+    emitMappingPermissions();
 }
 
 function datasetReadyForTraining() {
@@ -2382,12 +2636,70 @@ function datasetReadyForTraining() {
 }
 
 function modelReadyForCommands() {
-    return state.modelHasWeights && !state.architectureDirty;
+    return state.modelReady && state.modelHasWeights && !state.architectureDirty;
 }
 
 function emitDatasetReadinessState() {
     emitState(["dataset", "ready", datasetReadyForTraining() ? 1 : 0]);
     emitState(["dataset", "map_empty", state.datasetSize === 0 ? 1 : 0]);
+    emitState(["dataset", "state", datasetLifecycleState()]);
+}
+
+function datasetLifecycleState() {
+    if (state.datasetSize === 0) { return "EMPTY"; }
+    if (state.datasetSize === 1) { return "INSUFFICIENT"; }
+    return "READY";
+}
+
+function modelLifecycleState() {
+    if (state.trainingActive || state.creatingMapFeedbackActive) { return "TRAINING"; }
+    if (state.realModelState === "failed") { return "TRAINING_FAILED"; }
+    if (modelReadyForCommands()) { return "MODEL_READY"; }
+    return "NO_MODEL";
+}
+
+function applicationModeState() {
+    if (state.questionnaireActive || isQuestionnairePhase(state.phase)) {
+        return "QUESTIONNAIRE";
+    }
+    if (state.phase === "auto_building" ||
+            (state.phase === "clearing_dataset" && state.pendingClearReason === "auto") ||
+            (state.phase === "training" && state.mode === "auto")) {
+        return "AUTONOMOUS";
+    }
+    if (state.view === "explore") { return "EXPLORE"; }
+    if (state.mode === "semi") { return "GUIDED"; }
+    if (state.mode === "free") { return "FREE"; }
+    return "AUTONOMOUS";
+}
+
+function temporaryUiState() {
+    if (state.overlay === "not_enough_patterns" || state.overlay === "not_enough_likes") {
+        return "NOT_ENOUGH_PATTERNS";
+    }
+    if (state.overlay === "creating_map" || state.creatingMapFeedbackActive) {
+        return "CREATING_MAP";
+    }
+    return "NORMAL";
+}
+
+function manualModeActive() {
+    return state.view === "learn" && !state.questionnaireActive &&
+        !isQuestionnairePhase(state.phase) &&
+        (state.mode === "semi" || state.mode === "free");
+}
+
+function emitMappingPermissions() {
+    var idle = !state.trainingActive && !state.creatingMapFeedbackActive &&
+        !state.resetInProgress && state.queue.length === 0 && emitTask === null;
+    var readyPreset = state.presetReady && !state.awaitingPreset &&
+        validPattern(state.currentPattern);
+    emitState(["ui", "can_map_here",
+        manualModeActive() && state.mode === "semi" && state.phase === "semi_ready" &&
+        idle && readyPreset && state.positionValid ? 1 : 0]);
+    emitState(["ui", "can_add_point",
+        manualModeActive() && state.mode === "free" && state.phase === "free_ready" &&
+        idle && readyPreset && state.positionValid ? 1 : 0]);
 }
 
 function trainingCommandState() {
@@ -2405,6 +2717,8 @@ function trainingCommandState() {
 }
 
 function emitQuestionnaireState() {
+    emitState(["questionnaire", "state", state.questionnaireState]);
+    emitState(["questionnaire", "session_id", state.questionnaireSessionId]);
     emitState(["questionnaire", "active", state.questionnaireActive ? 1 : 0]);
     emitState(["questionnaire", "index", state.questionnaireIndex]);
     emitState(["questionnaire", "pattern", state.questionnaireCurrentPattern]);
