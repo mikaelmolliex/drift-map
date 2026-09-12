@@ -235,6 +235,9 @@ var smallRects =
 var handLedRects =
     [[], []];
 
+var pattrOutputResyncTask = null;
+var pattrOutputResyncDelayMs = 1;
+
 
 // ============================================================
 // MODE PROPERTIES
@@ -766,13 +769,27 @@ function getSourceLabel(
     sourceIndex
 )
 {
+    return getSourceLabelForMode(
+        UI_MODE,
+        hand,
+        sourceIndex
+    );
+}
+
+
+function getSourceLabelForMode(
+    modeName,
+    hand,
+    sourceIndex
+)
+{
     var side =
         hand === 0
         ? "left"
         : "right";
 
 
-    if (UI_MODE === MODE_HANDS)
+    if (modeName === MODE_HANDS)
     {
         var base =
             handLandmarkNames[
@@ -786,7 +803,7 @@ function getSourceLabel(
     }
 
 
-    if (UI_MODE === MODE_CLUSTERS)
+    if (modeName === MODE_CLUSTERS)
     {
         return (
             side +
@@ -796,7 +813,7 @@ function getSourceLabel(
     }
 
 
-    if (UI_MODE === MODE_GAMEPAD)
+    if (modeName === MODE_GAMEPAD)
     {
         return (
             "gamepad_" +
@@ -805,7 +822,7 @@ function getSourceLabel(
     }
 
 
-    if (UI_MODE === MODE_MOUSE)
+    if (modeName === MODE_MOUSE)
     {
         return (
             "mouse_" +
@@ -814,7 +831,7 @@ function getSourceLabel(
     }
 
 
-    if (UI_MODE === MODE_WEARABLE)
+    if (modeName === MODE_WEARABLE)
     {
         return (
             "wearable_" +
@@ -1968,6 +1985,132 @@ function emitAllHandLedStates()
     }
 }
 
+
+// ============================================================
+// MAPPING OUTPUT RESYNCHRONIZATION
+// ============================================================
+
+function emitAllMappingStatesForMode(
+    modeName
+)
+{
+    var state =
+        modeStates[modeName];
+
+    if (!state)
+        return;
+
+    var sourceCount =
+        getSourceCountForMode(
+            modeName
+        );
+
+    var axisCount =
+        getAxisCountForMode(
+            modeName
+        );
+
+    for (var h = 0; h < 2; h++)
+    {
+        for (
+            var s = 0;
+            s < sourceCount;
+            s++
+        )
+        {
+            var sourceLabel =
+                getSourceLabelForMode(
+                    modeName,
+                    h,
+                    s
+                );
+
+            for (
+                var p = 0;
+                p < NUM_PARAMS;
+                p++
+            )
+            {
+                for (
+                    var a = 0;
+                    a < axisCount;
+                    a++
+                )
+                {
+                    outlet(
+                        0,
+                        sourceLabel,
+                        a,
+                        p,
+                        state.mappings[h][s][p][a]
+                            ? 1
+                            : 0
+                    );
+                }
+            }
+        }
+    }
+}
+
+
+function emitAllMappingStates()
+{
+    var modes = [
+        MODE_HANDS,
+        MODE_CLUSTERS,
+        MODE_GAMEPAD,
+        MODE_MOUSE,
+        MODE_WEARABLE
+    ];
+
+    for (
+        var m = 0;
+        m < modes.length;
+        m++
+    )
+    {
+        emitAllMappingStatesForMode(
+            modes[m]
+        );
+    }
+}
+
+
+function emitRestoredOutputStates()
+{
+    /*
+        Send every mapping state, including zeroes. This closes
+        gates left open by the previous preset before restoring
+        the mappings that are active in the recalled preset.
+    */
+
+    emitAllMappingStates();
+
+    if (UI_MODE === MODE_HANDS)
+        emitAllHandLedStates();
+}
+
+
+function schedulePattrOutputResync()
+{
+    if (pattrOutputResyncTask === null)
+    {
+        pattrOutputResyncTask =
+            new Task(
+                emitRestoredOutputStates,
+                this
+            );
+    }
+    else
+    {
+        pattrOutputResyncTask.cancel();
+    }
+
+    pattrOutputResyncTask.schedule(
+        pattrOutputResyncDelayMs
+    );
+}
+
 // ============================================================
 // INPUT
 //
@@ -2699,6 +2842,9 @@ function clear()
             UI_MODE
         );
 
+    emitAllMappingStatesForMode(
+        UI_MODE
+    );
 
     if (UI_MODE === MODE_HANDS)
         emitAllHandLedStates();
@@ -2716,6 +2862,7 @@ function clearall()
 {
     initializeModeStates();
 
+    emitAllMappingStates();
 
     if (UI_MODE === MODE_HANDS)
         emitAllHandLedStates();
@@ -2769,6 +2916,10 @@ function clearmappings()
             }
         }
     }
+
+    emitAllMappingStatesForMode(
+        UI_MODE
+    );
 
     notifyPattr();
     mgraphics.redraw();
@@ -2962,9 +3113,12 @@ function setvalueof()
         rebuildLastActions();
 
 
-        // restore gates if necessary
-        if (UI_MODE === MODE_HANDS)
-            emitAllHandLedStates();
+        /*
+            Restore Max-side gates after all pattr clients have had
+            a scheduler pass. The full mapping state includes zeroes,
+            so gates left open by the previous preset are also closed.
+        */
+        schedulePattrOutputResync();
 
 
         mgraphics.redraw();

@@ -63,6 +63,7 @@ function createInitialState() {
         questionnaireSessionId: 0,
         questionnaireReturnSessionId: 0,
         questionnaireActive: false,
+        questionnaireAnswerEnabled: false,
         questionnaireCurrentPattern: 0,
         questionnaireAwaitingPreset: false,
         bankEnded: false,
@@ -73,6 +74,7 @@ function createInitialState() {
         selectedPatterns: [],
 
         currentPattern: 0,
+        loadedPattern: 0,
         presetReady: false,
         awaitingPreset: false,
 
@@ -85,6 +87,7 @@ function createInitialState() {
 
         pointCounter: 0,
         datasetSize: 0,
+        datasetSamples: [],
 
         queue: [],
         batchCurrent: 0,
@@ -141,7 +144,9 @@ function createInitialState() {
 
         resetInProgress: false,
         resetDatasetConfirmed: false,
-        resetModelConfirmed: false
+        resetModelConfirmed: false,
+        datasetClearPending: false,
+        modelResetPending: false
     };
 }
 
@@ -375,7 +380,7 @@ function resetController() {
         view: state.view,
         mode: state.mode,
         currentPattern: state.currentPattern,
-        presetReady: state.presetReady && !state.awaitingPreset,
+        loadedPattern: state.loadedPattern,
         currentPosition: state.currentPosition.slice(0),
         positionValid: state.positionValid,
         slotList: state.slotList.slice(0),
@@ -389,8 +394,11 @@ function resetController() {
     state = createInitialState();
     state.view = preserved.view;
     state.mode = preserved.mode;
-    state.currentPattern = preserved.currentPattern;
-    state.presetReady = preserved.presetReady && validPattern(preserved.currentPattern);
+    state.loadedPattern = preserved.loadedPattern;
+    state.currentPattern = validPattern(preserved.loadedPattern) ?
+        preserved.loadedPattern : preserved.currentPattern;
+    state.presetReady = validPattern(state.loadedPattern) &&
+        state.currentPattern === state.loadedPattern;
     state.currentPosition = preserved.currentPosition;
     state.positionValid = preserved.positionValid;
     state.slotList = preserved.slotList;
@@ -402,6 +410,8 @@ function resetController() {
     state.resetDatasetConfirmed = false;
     state.resetModelConfirmed = false;
     state.modelResetConfirmed = false;
+    state.datasetClearPending = true;
+    state.modelResetPending = true;
 
     outlet(4, ["blockslots", 0]);
     setPlayGate(0);
@@ -464,8 +474,7 @@ function setMode(value) {
 }
 
 function applyMode(next) {
-    var readyPattern = state.presetReady && !state.awaitingPreset &&
-        validPattern(state.currentPattern) ? state.currentPattern : 0;
+    var readyPattern = confirmedLoadedPattern();
     stopEmitTask();
     cancelQuestionnaireReturn();
     state.queue = [];
@@ -474,9 +483,11 @@ function applyMode(next) {
     state.pendingClearReason = "";
     state.awaitingPreset = false;
     state.presetReady = readyPattern > 0;
+    state.currentPattern = readyPattern;
     state.mode = next;
     emitUi(["mode", next]);
     emitState(["ui", "mode", next]);
+    emitPresetState();
 
     if (next === "free") {
         ensureFreeModelConfig();
@@ -612,6 +623,14 @@ function setSlotList(args) {
     state.slotListDeclared = true;
     state.availablePatternCount = next.length;
     state.effectiveMinLikedPatterns = Math.min(state.minLikedPatterns, next.length);
+    if (validPattern(state.loadedPattern) && !patternInSlotList(state.loadedPattern)) {
+        emitEvent("loaded_preset_invalidated", [state.loadedPattern, "slotlist_changed"]);
+        state.loadedPattern = 0;
+        if (!state.awaitingPreset) {
+            state.currentPattern = 0;
+            state.presetReady = false;
+        }
+    }
     if (interrupted) {
         stopEmitTask();
         setSlotsBlocked(false, true);
@@ -627,6 +646,7 @@ function setSlotList(args) {
         emitUi(["questionnaire_total", next.length]);
     }
     emitSlotsState();
+    emitPresetState();
     emitState(["dataset", "effective_minlikes", state.effectiveMinLikedPatterns]);
     emitQuestionnaireState();
     emitEvent("slotlist_updated", [next.length]);
@@ -717,6 +737,7 @@ function startQuestionnaire() {
 
 function resetQuestionnaireSession() {
     state.questionnaireActive = false;
+    state.questionnaireAnswerEnabled = false;
     state.questionnaireCurrentPattern = 0;
     state.questionnaireAwaitingPreset = false;
     state.bankEnded = false;
@@ -725,9 +746,10 @@ function resetQuestionnaireSession() {
     state.answers = [];
     state.likedPatterns = [];
     state.questionnaireIndex = -1;
-    state.currentPattern = 0;
-    state.presetReady = false;
+    state.currentPattern = confirmedLoadedPattern();
+    state.presetReady = state.currentPattern > 0;
     state.awaitingPreset = false;
+    emitPresetState();
 }
 
 function cancelQuestionnaire() {
@@ -827,7 +849,7 @@ function saveAnswer(value) {
     var patternId;
     var position;
     if (state.mode !== "auto" || state.phase !== "questionnaire_waiting" ||
-            !state.presetReady || state.awaitingPreset) {
+            !state.questionnaireAnswerEnabled || !state.presetReady || state.awaitingPreset) {
         emitError("answer_not_available", false);
         return;
     }
@@ -839,8 +861,9 @@ function saveAnswer(value) {
         return;
     }
 
-    /* Lock immediately so a double click cannot save twice. */
-    state.presetReady = false;
+    /* Lock only the current answer. The physically loaded preset remains
+     * confirmed and can be reused by Guided/Free after the questionnaire. */
+    state.questionnaireAnswerEnabled = false;
     state.answers[state.questionnaireIndex] = value;
     position = state.questionnaireIndex + 1;
     emitUi(["answer_saved", patternId, value, position]);
@@ -943,30 +966,42 @@ function requestDatasetClear(reason) {
         emitError("clear_deferred", false);
         return;
     }
+    if (state.datasetClearPending) {
+        emitError("clear_already_pending", false);
+        return;
+    }
     stopEmitTask();
     cancelCreatingMapFeedback();
     cancelQuestionnaireReturn();
     state.queue = [];
     state.pendingClearReason = clearReason;
     if (clearReason === "auto") {
-        state.presetReady = false;
         state.awaitingPreset = false;
+        beginAutomaticCreatingMapFeedback();
     }
     state.modelReady = false;
     state.modelReadyBeforeTraining = false;
     state.realModelState = "train_to_start";
     setPlayGate(0);
     setPhase("clearing_dataset");
+    state.datasetClearPending = true;
     outlet(4, "clear_map");
 }
 
 function handleDatasetCleared() {
-    var reason = state.pendingClearReason;
+    var reason;
+    if (!state.datasetClearPending) {
+        emitWarning("unexpected_dataset_cleared", []);
+        return;
+    }
+    state.datasetClearPending = false;
+    reason = state.pendingClearReason;
     var fullReset = state.resetInProgress && reason === "reset";
     stopEmitTask();
     state.queue = [];
     state.pointCounter = 0;
     state.datasetSize = 0;
+    state.datasetSamples = [];
     state.batchCurrent = 0;
     state.batchTotal = 0;
     state.pendingClearReason = fullReset ? "reset" : "";
@@ -1051,6 +1086,7 @@ function finishAutoBuild() {
     }
     emitUi(["mapping_progress", state.datasetSize, state.autoTargetSize, 1]);
     emitEvent("dataset_complete", [state.datasetSize]);
+    cancelCreatingMapFeedback();
     beginManagedTraining("from_scratch", true);
 }
 
@@ -1062,6 +1098,10 @@ function selectPattern(value) {
     }
     if (state.trainingActive) {
         emitError("fit_already_running", false);
+        return;
+    }
+    if (pointBatchActive()) {
+        emitError("batch_in_progress", false);
         return;
     }
     if (!validPattern(patternId)) {
@@ -1150,12 +1190,16 @@ function prepareBatch(patternId, coordinates) {
     for (i = 0; i < coordinates.length; i += 1) {
         state.queue.push({
             patternId: patternId,
-            coordinates: coordinates[i].slice(0)
+            coordinates: coordinates[i].slice(0),
+            sourceMode: state.mode
         });
     }
     state.batchCurrent = 0;
     state.batchTotal = coordinates.length;
     state.batchPattern = patternId;
+    if (state.mode === "semi" || state.mode === "free") {
+        setSlotsBlocked(true, false);
+    }
     emitUi(["batch_started", patternId, state.batchTotal]);
     emitEvent("batch_started", [patternId, state.batchTotal]);
     startEmitTask();
@@ -1187,7 +1231,8 @@ function beginNextPoint() {
         item.coordinates[0],
         item.coordinates[1],
         item.coordinates[2],
-        item.coordinates[3]
+        item.coordinates[3],
+        item.sourceMode
     ]);
     scheduleStep(commitPendingPoint, DRIFTMAP_XY_SETTLE_MS);
 }
@@ -1207,6 +1252,12 @@ function commitPendingPoint() {
     outlet(3, pointId);
 
     state.datasetSize += 1;
+    state.datasetSamples.push({
+        id: pointId,
+        patternId: item.patternId,
+        coordinates: item.coordinates.slice(0),
+        sourceMode: item.sourceMode
+    });
     state.batchCurrent += 1;
     state.realModelState = "train_to_start";
     state.datasetDirty = true;
@@ -1217,7 +1268,8 @@ function commitPendingPoint() {
         item.coordinates[0],
         item.coordinates[1],
         item.coordinates[2],
-        item.coordinates[3]
+        item.coordinates[3],
+        item.sourceMode
     ]);
     emitUi(["dataset_points", state.datasetSize]);
     if (state.mode === "auto" && state.phase === "auto_building") {
@@ -1259,11 +1311,13 @@ function finishBatch() {
             loadCurrentAutoGroup();
         }
     } else if (state.mode === "semi") {
+        setSlotsBlocked(false, false);
         setPhase("semi_ready");
         if (state.autoFit) {
             handleLegacyTrain(true);
         }
     } else if (state.mode === "free") {
+        setSlotsBlocked(false, false);
         setPhase("free_ready");
         if (state.autoFit) {
             handleLegacyTrain(true);
@@ -1371,8 +1425,12 @@ function loadPattern(patternId, phase) {
     state.awaitingPreset = true;
     state.questionnaireAwaitingPreset = phase === "questionnaire_loading";
     if (phase === "questionnaire_loading") {
+        state.questionnaireAnswerEnabled = false;
+    }
+    if (phase === "questionnaire_loading") {
         state.questionnaireCurrentPattern = patternId;
     }
+    emitPresetState();
     setPhase(phase);
     emitUi(["pattern_loading", patternId]);
     emitEvent("pattern_loading", [patternId]);
@@ -1397,6 +1455,15 @@ function handlePresetReady(value, sessionValue) {
         ((state.mode === "semi" || state.mode === "free") ||
         (state.mode === "auto" && state.phase === "idle" &&
         !state.slotsBlocked && !state.trainingActive));
+    if (externallySelected && pointBatchActive()) {
+        emitEvent("preset_handshake", [
+            "stopped_batch_in_progress",
+            patternId,
+            state.currentPattern
+        ]);
+        emitError("batch_in_progress", false);
+        return;
+    }
     if (!validPattern(patternId)) {
         emitEvent("preset_handshake", [
             "stopped_invalid_preset_ready",
@@ -1435,6 +1502,7 @@ function handlePresetReady(value, sessionValue) {
         return;
     }
     state.currentPattern = patternId;
+    state.loadedPattern = patternId;
     state.awaitingPreset = false;
     state.questionnaireAwaitingPreset = false;
     state.presetReady = true;
@@ -1445,10 +1513,11 @@ function handlePresetReady(value, sessionValue) {
     ]);
     emitUi(["pattern_ready", patternId]);
     emitEvent("pattern_ready", [patternId]);
-    emitState(["dataset", "pattern", patternId]);
+    emitPresetState();
 
     if (state.phase === "questionnaire_loading") {
         state.questionnaireCurrentPattern = patternId;
+        state.questionnaireAnswerEnabled = true;
         emitUi(["questionnaire_progress", state.questionnaireIndex + 1,
             state.slotList.length,
             countAnsweredPatterns(), 0]);
@@ -1624,6 +1693,7 @@ function beginManagedTraining(mode, internalRequest) {
     if (requestedMode === "from_scratch") {
         state.modelResetConfirmed = false;
         state.pendingTrainingAction = "train_after_reset";
+        state.modelResetPending = true;
         outlet(4, "reset_model");
     } else {
         state.pendingTrainingAction = "fit_after_config";
@@ -1758,6 +1828,11 @@ function handleModelConfigApplied(value) {
     var revision = toInteger(value);
     if (!state.trainingActive || revision !== state.modelConfigRevision) {
         emitError("stale_config_ack", false);
+        return;
+    }
+    if (state.trainingMode === "from_scratch" &&
+            (!state.modelResetConfirmed || state.modelResetPending)) {
+        emitWarning("config_ack_before_model_reset", [revision]);
         return;
     }
     state.appliedConfigRevision = revision;
@@ -2003,13 +2078,20 @@ function requestModelReset() {
     state.realModelState = "train_to_start";
     state.modelResetConfirmed = false;
     state.pendingTrainingAction = "manual_reset";
+    state.modelResetPending = true;
     emitTrainingState();
     emitOverlayState();
     outlet(4, "reset_model");
 }
 
 function handleModelResetDone() {
-    var action = state.pendingTrainingAction;
+    var action;
+    if (!state.modelResetPending) {
+        emitWarning("unexpected_model_reset_done", []);
+        return;
+    }
+    state.modelResetPending = false;
+    action = state.pendingTrainingAction;
     state.modelHasWeights = false;
     state.modelReady = false;
     state.modelReadyBeforeTraining = false;
@@ -2260,6 +2342,17 @@ function beginCreatingMapFeedback(operationId) {
     return true;
 }
 
+function beginAutomaticCreatingMapFeedback() {
+    if (state.creatingMapFeedbackActive) {
+        return false;
+    }
+    state.creatingMapFeedbackActive = true;
+    state.creatingMapOperationId = state.questionnaireSessionId;
+    state.pendingReadyAfterCreatingMap = false;
+    emitUi(["creating_map_feedback", 1, state.creatingMapDuration]);
+    return true;
+}
+
 function finishCreatingMapFeedback(operationId) {
     var showReady = state.pendingReadyAfterCreatingMap;
     if (!state.creatingMapFeedbackActive ||
@@ -2346,7 +2439,7 @@ function setSpread(value) {
 
 function setAutoPoints(value) {
     var parsed = toInteger(value);
-    if (!isFiniteNumber(parsed) || parsed < 1 || parsed > DRIFTMAP_MAX_BATCH_POINTS) {
+    if (!isFiniteNumber(parsed) || parsed < 2 || parsed > DRIFTMAP_MAX_BATCH_POINTS) {
         emitError("invalid_point_count", false);
         return;
     }
@@ -2519,6 +2612,7 @@ function emitStateEvent(name, args) {
 }
 
 function emitStateSnapshot() {
+    emitDatasetVisualSnapshot();
     emitState(["ui", "view", state.view]);
     emitState(["ui", "mode", state.mode]);
     emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
@@ -2528,7 +2622,7 @@ function emitStateSnapshot() {
     emitSlotsState();
     emitState(["dataset", "size", state.datasetSize]);
     emitDatasetReadinessState();
-    emitState(["dataset", "pattern", state.currentPattern]);
+    emitPresetState();
     emitState(["dataset", "auto_points", state.autoTotalPoints]);
     emitState(["dataset", "batch_points", state.semiBatchPoints]);
     emitState(["dataset", "minlikes", state.minLikedPatterns]);
@@ -2544,9 +2638,36 @@ function emitStateSnapshot() {
     emitQuestionnaireState();
 }
 
+function emitDatasetVisualSnapshot() {
+    var sample;
+    var i;
+    emitUi(["dataset_snapshot_begin", state.datasetSamples.length]);
+    for (i = 0; i < state.datasetSamples.length; i += 1) {
+        sample = state.datasetSamples[i];
+        emitUi([
+            "dataset_point",
+            sample.id,
+            sample.patternId,
+            sample.coordinates[0],
+            sample.coordinates[1],
+            sample.coordinates[2],
+            sample.coordinates[3],
+            sample.sourceMode
+        ]);
+    }
+    emitUi(["dataset_snapshot_end", state.datasetSamples.length]);
+}
+
 function emitSlotsState() {
     emitState(["slots", "list"].concat(state.slotList));
     emitState(["slots", "count", state.slotList.length]);
+}
+
+function emitPresetState() {
+    emitState(["dataset", "pattern", state.currentPattern]);
+    emitState(["dataset", "loaded_pattern", state.loadedPattern]);
+    emitState(["dataset", "preset_ready", state.presetReady &&
+        !state.awaitingPreset && state.currentPattern === state.loadedPattern ? 1 : 0]);
 }
 
 function emitModelState() {
@@ -2670,15 +2791,6 @@ function modelLifecycleState() {
 }
 
 function applicationModeState() {
-    if (state.questionnaireActive || isQuestionnairePhase(state.phase)) {
-        return "QUESTIONNAIRE";
-    }
-    if (state.phase === "auto_building" ||
-            (state.phase === "clearing_dataset" && state.pendingClearReason === "auto") ||
-            (state.phase === "training" && state.mode === "auto")) {
-        return "AUTONOMOUS";
-    }
-    if (state.view === "explore") { return "EXPLORE"; }
     if (state.mode === "semi") { return "GUIDED"; }
     if (state.mode === "free") { return "FREE"; }
     return "AUTONOMOUS";
@@ -2698,6 +2810,11 @@ function manualModeActive() {
     return state.view === "learn" && !state.questionnaireActive &&
         !isQuestionnairePhase(state.phase) &&
         (state.mode === "semi" || state.mode === "free");
+}
+
+function pointBatchActive() {
+    return state.queue.length > 0 || state.pendingPoint !== null || emitTask !== null ||
+        state.phase === "semi_building" || state.phase === "free_building";
 }
 
 function emitMappingPermissions() {
@@ -2731,6 +2848,8 @@ function emitQuestionnaireState() {
     emitState(["questionnaire", "state", state.questionnaireState]);
     emitState(["questionnaire", "session_id", state.questionnaireSessionId]);
     emitState(["questionnaire", "active", state.questionnaireActive ? 1 : 0]);
+    emitState(["questionnaire", "answer_enabled",
+        state.questionnaireAnswerEnabled ? 1 : 0]);
     emitState(["questionnaire", "index", state.questionnaireIndex]);
     emitState(["questionnaire", "pattern", state.questionnaireCurrentPattern]);
     emitState(["questionnaire", "total", state.slotList.length]);
@@ -2876,6 +2995,13 @@ function formatPointId(value) {
 
 function validPattern(value) {
     return value >= 1 && Math.floor(value) === value;
+}
+
+function confirmedLoadedPattern() {
+    if (!validPattern(state.loadedPattern)) {
+        return 0;
+    }
+    return state.loadedPattern;
 }
 
 function patternInSlotList(patternId) {

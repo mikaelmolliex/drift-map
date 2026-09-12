@@ -55,6 +55,7 @@ var viewState = {
     creatingMapFeedbackActive: false,
     creatingMapDuration: 12000,
     creatingMapStartFrame: 0,
+    overlayProtocolSeen: false,
 
     currentPattern: 0,
     patternReady: false,
@@ -306,6 +307,14 @@ function receiveMessage(name, args) {
         receivePointWriting(args);
     } else if (name === "point_added") {
         receivePointAdded(args);
+    } else if (name === "dataset_snapshot_begin") {
+        beginDatasetSnapshot();
+    } else if (name === "dataset_point") {
+        receivePointAdded(args);
+    } else if (name === "dataset_snapshot_end") {
+        viewState.datasetSize = Math.max(viewState.points.length,
+            Math.max(0, Number(args[0]) || 0));
+        viewState.pendingPoint = null;
     } else if (name === "dataset_points") {
         viewState.datasetSize = Math.max(0, Number(args[0]) || 0);
     } else if (name === "mapping_progress") {
@@ -318,8 +327,6 @@ function receiveMessage(name, args) {
             Number(args[1]) || viewState.creatingMapDuration);
         if (viewState.creatingMapFeedbackActive) {
             viewState.creatingMapStartFrame = viewState.frame;
-        } else if (viewState.screen === "auto_building") {
-            viewState.screen = "idle";
         }
     } else if (name === "dataset_cleared" || name === "map_cleared") {
         clearVisualDataset();
@@ -385,6 +392,7 @@ function setMappingMode(value) {
 
 function setOverlayScreen(value) {
     var next = String(value || "none").toLowerCase();
+    viewState.overlayProtocolSeen = true;
     viewState.showModelReady = next === "model_ready";
     if (next === "creating_map") {
         viewState.screen = "auto_building";
@@ -399,6 +407,11 @@ function setOverlayScreen(value) {
 
 function setScreen(value) {
     var next = String(value || "idle");
+    if (viewState.overlayProtocolSeen) {
+        /* Once the explicit overlay protocol is present, lifecycle telemetry
+         * can no longer create or dismiss a visual overlay. */
+        return;
+    }
     if (next === "auto") {
         next = "idle";
     } else if (next === "semi" || next === "free") {
@@ -432,7 +445,7 @@ function receivePointWriting(args) {
     viewState.pendingPoint = {
         patternId: patternId,
         colorIndex: colorIndexForPattern(patternId),
-        freePoint: viewState.mappingMode === "free",
+        freePoint: pointSourceMode(args[5]) === "free",
         left: [coordinates[0], coordinates[1]],
         right: [coordinates[2], coordinates[3]],
         createdFrame: viewState.frame
@@ -456,13 +469,26 @@ function receivePointAdded(args) {
         id: id,
         patternId: patternId,
         colorIndex: colorIndexForPattern(patternId),
-        freePoint: viewState.mappingMode === "free",
+        freePoint: pointSourceMode(args[6]) === "free",
         left: [coordinates[0], coordinates[1]],
         right: [coordinates[2], coordinates[3]],
         createdFrame: viewState.frame
     });
     viewState.pendingPoint = null;
     viewState.datasetSize = Math.max(viewState.datasetSize, viewState.points.length);
+}
+
+function beginDatasetSnapshot() {
+    viewState.points = [];
+    viewState.pendingPoint = null;
+    viewState.patternColorIndices = {};
+    viewState.nextPatternColorIndex = 0;
+    viewState.datasetSize = 0;
+}
+
+function pointSourceMode(value) {
+    var mode = String(value || viewState.mappingMode).toLowerCase();
+    return mode === "free" ? "free" : (mode === "semi" ? "semi" : "auto");
 }
 
 function clearVisualDataset() {
@@ -914,7 +940,7 @@ function drawQuestionnaireDots(cx, cy, availableWidth) {
 function drawBuilding(width, height) {
     var ratio = clip01(viewState.mappingCurrent / Math.max(1, viewState.mappingTotal));
     var barWidth = 360;
-    if (viewState.creatingMapFeedbackActive) {
+    if (viewState.creatingMapFeedbackActive && viewState.mappingMode !== "auto") {
         ratio = clip01(((viewState.frame - viewState.creatingMapStartFrame) * 33) /
             Math.max(1, viewState.creatingMapDuration));
     }
