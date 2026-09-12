@@ -318,6 +318,8 @@ function receiveMessage(name, args) {
             Number(args[1]) || viewState.creatingMapDuration);
         if (viewState.creatingMapFeedbackActive) {
             viewState.creatingMapStartFrame = viewState.frame;
+        } else if (viewState.screen === "auto_building") {
+            viewState.screen = "idle";
         }
     } else if (name === "dataset_cleared" || name === "map_cleared") {
         clearVisualDataset();
@@ -403,6 +405,9 @@ function setScreen(value) {
         next = "idle";
     } else if (next === "ready") {
         next = "idle";
+    } else if (next === "auto_building") {
+        /* Lifecycle telemetry is not a visual trigger: overlay creating_map is. */
+        return;
     }
     viewState.screen = next;
 }

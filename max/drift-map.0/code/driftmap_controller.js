@@ -2148,7 +2148,12 @@ function setPhase(phase) {
             phase === "questionnaire_complete") {
         publicState = "questionnaire";
     } else if (phase === "clearing_dataset") {
-        publicState = state.mode === "semi" ? "semi" : (state.mode === "free" ? "free" : "auto_building");
+        if (state.pendingClearReason === "auto") {
+            publicState = "auto_building";
+        } else {
+            publicState = state.mode === "semi" ? "semi" :
+                (state.mode === "free" ? "free" : "idle");
+        }
     } else if (phase === "auto_building") {
         publicState = "auto_building";
     } else if (phase === "semi_waiting" || phase === "semi_loading" ||
@@ -2571,7 +2576,7 @@ function modelDisplayState() {
 }
 
 function statusTextFor(display) {
-    var modeLabel = applicationModeState();
+    var modeLabel = mappingModeLabel();
     if (state.creatingMapFeedbackActive || state.overlay === "creating_map") {
         return modeLabel + " • CREATING MAP";
     }
@@ -2588,6 +2593,12 @@ function statusTextFor(display) {
         return modeLabel + " • MODEL FAILED";
     }
     return modeLabel + " • TRAIN TO START";
+}
+
+function mappingModeLabel() {
+    if (state.mode === "semi") { return "GUIDED"; }
+    if (state.mode === "free") { return "FREE MAPPING"; }
+    return "AUTONOMOUS";
 }
 
 function emitMlpState() {
