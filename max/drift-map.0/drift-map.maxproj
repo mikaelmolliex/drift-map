@@ -2,8 +2,8 @@
     "name": "drift-map",
     "version": 1,
     "creationdate": 3859615462,
-    "modificationdate": 3871595897,
-    "viewrect": [ 0.0, 95.0, 1512.0, 853.0 ],
+    "modificationdate": 3872084999,
+    "viewrect": [ 215.0, 98.0, 1512.0, 853.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
     "showdependencies": 1,
@@ -93,15 +93,7 @@
                 "kind": "vectorimagefile",
                 "local": 1
             },
-            "piano_keys.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
             "play-solid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
-            "pulse.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -124,18 +116,6 @@
             "import_Logo.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
-            },
-            "LandmarksLeftHand.svg": {
-                "kind": "vectorimagefile"
-            },
-            "LandmarksRightHand.svg": {
-                "kind": "vectorimagefile"
-            },
-            "switch-off.svg": {
-                "kind": "vectorimagefile"
-            },
-            "switch-on.svg": {
-                "kind": "vectorimagefile"
             },
             "forward.svg": {
                 "kind": "vectorimagefile"
@@ -204,12 +184,10 @@
                 "local": 1
             },
             "nav-arrow-down-solid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
+                "kind": "vectorimagefile"
             },
             "nav-arrow-up-solid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
+                "kind": "vectorimagefile"
             },
             "arrow-up-circle-solid.svg": {
                 "kind": "vectorimagefile",
@@ -268,6 +246,14 @@
                 "local": 1
             },
             "thumbs-down.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "brain.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "brain-electricity.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             }
@@ -343,11 +329,11 @@
             }
         },
         "data": {
-            "Controller Grainscape.json": {
+            "Init Preset.json": {
                 "kind": "json",
                 "local": 1
             },
-            "Init Preset.json": {
+            "Controller Grainscape.json": {
                 "kind": "json",
                 "local": 1
             },

@@ -519,7 +519,7 @@ function returnToModeMenu() {
     setView("explore");
 }
 
-function setView(value) {
+function setView(value, internalRequest) {
     var next = String(value || "").toLowerCase();
     if (next === "play") {
         next = "explore";
@@ -528,6 +528,13 @@ function setView(value) {
     }
     if (next !== "explore" && next !== "learn") {
         emitError("invalid_view", false);
+        return;
+    }
+    if (next === state.view && !internalRequest) {
+        return;
+    }
+    if (!internalRequest && interactionShouldLock()) {
+        emitError("operation_in_progress", false);
         return;
     }
     if (state.questionnaireState === "FAILED" &&
@@ -542,10 +549,19 @@ function setView(value) {
 }
 
 function setModelBypass(value) {
-    state.modelBypass = readBoolean(value);
+    var next = readBoolean(value);
+    if (interactionShouldLock() && next !== state.modelBypass) {
+        emitError("operation_in_progress", false);
+        return;
+    }
+    state.modelBypass = next;
+    if (state.modelBypass) {
+        setPlayGate(0);
+    }
     emitUi(["modelbypass", state.modelBypass ? 1 : 0]);
     outlet(4, ["modelbypass", state.modelBypass ? 1 : 0]);
-    emitModelState();
+    emitState(["ui", "modelbypass", state.modelBypass ? 1 : 0]);
+    updateApplicationState();
 }
 
 function setPlayGate(value) {
@@ -1140,6 +1156,10 @@ function mapHere() {
         emitError("invalid_mode", false);
         return;
     }
+    if (!mappingAllowedWithModel()) {
+        emitError("model_not_bypassed", false);
+        return;
+    }
     if (!state.positionValid) {
         emitError("invalid_position", false);
         return;
@@ -1174,6 +1194,10 @@ function addFreePoint() {
     }
     if (state.phase !== "free_ready") {
         emitError("invalid_mode", false);
+        return;
+    }
+    if (!mappingAllowedWithModel()) {
+        emitError("model_not_bypassed", false);
         return;
     }
     if (!state.positionValid) {
@@ -2000,7 +2024,7 @@ function finishManagedTraining(reason) {
         }
         emitModelStatus();
         if (state.mode === "auto") {
-            setView("explore");
+            setView("explore", true);
         }
         if (state.creatingMapFeedbackActive) {
             restoreModePhaseWithoutOverlay();
@@ -2010,7 +2034,7 @@ function finishManagedTraining(reason) {
             restoreModePhase();
             showModelReadyState();
         }
-        setPlayGate(1);
+        synchronizePlayGate();
         emitTrainingState();
     } else if (reason === "architecture_changed") {
         cancelCreatingMapFeedback();
@@ -2300,7 +2324,8 @@ function updateApplicationState() {
 
 function synchronizePlayGate() {
     var enabled = modelReadyForCommands() && !state.trainingActive &&
-        !state.resetInProgress && state.pendingTrainingAction !== "manual_reset";
+        !state.modelBypass && !state.resetInProgress &&
+        state.pendingTrainingAction !== "manual_reset";
     if (state.playGate !== enabled) {
         setPlayGate(enabled ? 1 : 0);
     }
@@ -2616,6 +2641,7 @@ function emitStateSnapshot() {
     emitState(["ui", "view", state.view]);
     emitState(["ui", "mode", state.mode]);
     emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+    emitState(["ui", "modelbypass", state.modelBypass ? 1 : 0]);
     emitState(["ui", "creating_map_duration", state.creatingMapDuration]);
     emitModelState();
     emitOverlayState();
@@ -2680,15 +2706,15 @@ function emitModelState() {
 }
 
 function modelDisplayState() {
-    if (state.modelBypass) {
-        return "off";
-    }
     if (state.trainingActive || state.creatingMapFeedbackActive ||
             state.realModelState === "training") {
         return "training";
     }
     if (state.realModelState === "failed") {
         return "failed";
+    }
+    if (state.modelBypass) {
+        return "off";
     }
     if (modelReadyForCommands()) {
         return "ready";
@@ -2702,7 +2728,7 @@ function statusTextFor(display) {
         return modeLabel + " • CREATING MAP";
     }
     if (display === "off") {
-        return "MODEL OFF";
+        return modeLabel + " • MODEL BYPASSED";
     }
     if (display === "training") {
         return modeLabel + " • MODEL TRAINING";
@@ -2824,10 +2850,14 @@ function emitMappingPermissions() {
         validPattern(state.currentPattern);
     emitState(["ui", "can_map_here",
         manualModeActive() && state.mode === "semi" && state.phase === "semi_ready" &&
-        idle && readyPreset && state.positionValid ? 1 : 0]);
+        idle && readyPreset && state.positionValid && mappingAllowedWithModel() ? 1 : 0]);
     emitState(["ui", "can_add_point",
         manualModeActive() && state.mode === "free" && state.phase === "free_ready" &&
-        idle && readyPreset && state.positionValid ? 1 : 0]);
+        idle && readyPreset && state.positionValid && mappingAllowedWithModel() ? 1 : 0]);
+}
+
+function mappingAllowedWithModel() {
+    return !modelReadyForCommands() || state.modelBypass;
 }
 
 function trainingCommandState() {
