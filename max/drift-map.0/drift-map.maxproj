@@ -2,7 +2,7 @@
     "name": "drift-map",
     "version": 1,
     "creationdate": 3859615462,
-    "modificationdate": 3872111269,
+    "modificationdate": 3872138295,
     "viewrect": [ 0.0, 95.0, 1512.0, 853.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
@@ -46,6 +46,10 @@
                 "local": 1
             },
             "dots-grid3x3.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "edit-pencil.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -256,10 +260,6 @@
             "thumbs-down.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
-            },
-            "edit-pencil.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
             }
         },
         "code": {
@@ -418,7 +418,8 @@
                     "projectrelativepath": "./media"
                 }
             }
-        }
+        },
+        "other": {        }
     },
     "layout": {    },
     "searchpath": {    },

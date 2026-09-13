@@ -7,3 +7,9 @@
 
 # Max deleted patches
 _DeletedItems/
+
+# Local standalone and release outputs
+*.app
+*.dmg
+*.zip
+*.zip.sha256
