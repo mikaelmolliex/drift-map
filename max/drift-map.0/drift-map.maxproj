@@ -2,8 +2,8 @@
     "name": "drift-map",
     "version": 1,
     "creationdate": 3859615462,
-    "modificationdate": 3872084999,
-    "viewrect": [ 215.0, 98.0, 1512.0, 853.0 ],
+    "modificationdate": 3872111269,
+    "viewrect": [ 0.0, 95.0, 1512.0, 853.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
     "showdependencies": 1,
@@ -30,6 +30,14 @@
                 "local": 1
             },
             "arrow-up-circle.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "brain-electricity.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "brain.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -249,11 +257,7 @@
                 "kind": "vectorimagefile",
                 "local": 1
             },
-            "brain.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
-            "brain-electricity.svg": {
+            "edit-pencil.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             }
@@ -329,6 +333,10 @@
             }
         },
         "data": {
+            "Algorithmic Dust.json": {
+                "kind": "json",
+                "local": 1
+            },
             "Init Preset.json": {
                 "kind": "json",
                 "local": 1
@@ -338,10 +346,6 @@
                 "local": 1
             },
             "Neural Drift.json": {
-                "kind": "json",
-                "local": 1
-            },
-            "Algorithmic Dust.json": {
                 "kind": "json",
                 "local": 1
             },
@@ -408,7 +412,11 @@
             },
             "fluid.mlpregressor~.mxo": {
                 "kind": "object",
-                "local": 1
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/GitHub_Projets/00_MM_GitHub_Projects/drift-map/max/drift-map.0/media",
+                    "projectrelativepath": "./media"
+                }
             }
         }
     },

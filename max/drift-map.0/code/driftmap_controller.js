@@ -15,7 +15,7 @@ setoutletassist(0, "Structured events for JSUI");
 setoutletassist(1, "Pattern id");
 setoutletassist(2, "Four input coordinates");
 setoutletassist(3, "Unique point id");
-setoutletassist(4, "Commands for Max: datasets, model, gates and blockslots");
+setoutletassist(4, "Commands for Max: datasets, model, play/matrix gates and blockslots");
 setoutletassist(5, "State bus for the external Max UI");
 
 var state = createInitialState();
@@ -43,7 +43,9 @@ function createInitialState() {
         phase: "idle",
         realModelState: "train_to_start",
         modelBypass: false,
+        mappingEdit: false,
         playGate: false,
+        matrixGate: false,
         showMapPoints: true,
         showExplorePoints: true,
         showLearnPoints: true,
@@ -203,6 +205,8 @@ function handleCommand(name, args) {
         emitUi(["reduce_motion", readBoolean(args[0]) ? 1 : 0]);
     } else if (name === "modelbypass") {
         setModelBypass(args[0]);
+    } else if (name === "mapping_edit") {
+        setMappingEdit(args[0]);
     } else if (name === "showmappoints") {
         setShowMapPoints(args[0]);
     } else if (name === "showexplorepoints") {
@@ -414,7 +418,8 @@ function resetController() {
     state.modelResetPending = true;
 
     outlet(4, ["blockslots", 0]);
-    setPlayGate(0);
+    setPlayGate(0, true);
+    setMatrixGate(0, true);
     outlet(4, ["modelbypass", 0]);
     emitUi(["mode", state.mode]);
     emitUi(["liked"]);
@@ -485,6 +490,9 @@ function applyMode(next) {
     state.presetReady = readyPattern > 0;
     state.currentPattern = readyPattern;
     state.mode = next;
+    if (next === "auto") {
+        state.mappingEdit = false;
+    }
     emitUi(["mode", next]);
     emitState(["ui", "mode", next]);
     emitPresetState();
@@ -543,6 +551,9 @@ function setView(value, internalRequest) {
         return;
     }
     state.view = next;
+    if (next === "explore") {
+        state.mappingEdit = false;
+    }
     emitUi(["view", next]);
     emitState(["ui", "view", next]);
     updateApplicationState();
@@ -555,8 +566,8 @@ function setModelBypass(value) {
         return;
     }
     state.modelBypass = next;
-    if (state.modelBypass) {
-        setPlayGate(0);
+    if (next) {
+        state.mappingEdit = false;
     }
     emitUi(["modelbypass", state.modelBypass ? 1 : 0]);
     outlet(4, ["modelbypass", state.modelBypass ? 1 : 0]);
@@ -564,10 +575,43 @@ function setModelBypass(value) {
     updateApplicationState();
 }
 
-function setPlayGate(value) {
-    state.playGate = readBoolean(value);
-    outlet(4, ["play_gate", state.playGate ? 1 : 0]);
-    emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+function setMappingEdit(value) {
+    var next = readBoolean(value);
+    if (!manualModeActive()) {
+        emitError("mapping_edit_not_available", false);
+        return;
+    }
+    if (interactionShouldLock() && next !== state.mappingEdit) {
+        emitError("operation_in_progress", false);
+        return;
+    }
+    state.mappingEdit = next;
+    if (next && state.modelBypass) {
+        state.modelBypass = false;
+        emitUi(["modelbypass", 0]);
+        outlet(4, ["modelbypass", 0]);
+        emitState(["ui", "modelbypass", 0]);
+    }
+    emitUi(["mapping_edit", mappingEditActive() ? 1 : 0]);
+    updateApplicationState();
+}
+
+function setPlayGate(value, force) {
+    var next = readBoolean(value);
+    if (force || state.playGate !== next) {
+        state.playGate = next;
+        outlet(4, ["play_gate", state.playGate ? 1 : 0]);
+        emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+    }
+}
+
+function setMatrixGate(value, force) {
+    var next = readBoolean(value);
+    if (force || state.matrixGate !== next) {
+        state.matrixGate = next;
+        outlet(4, ["matrix_gate", state.matrixGate ? 1 : 0]);
+        emitState(["ui", "matrix_gate", state.matrixGate ? 1 : 0]);
+    }
 }
 
 function setCreatingMapDuration(value) {
@@ -1157,7 +1201,7 @@ function mapHere() {
         return;
     }
     if (!mappingAllowedWithModel()) {
-        emitError("model_not_bypassed", false);
+        emitError("mapping_edit_required", false);
         return;
     }
     if (!state.positionValid) {
@@ -1197,7 +1241,7 @@ function addFreePoint() {
         return;
     }
     if (!mappingAllowedWithModel()) {
-        emitError("model_not_bypassed", false);
+        emitError("mapping_edit_required", false);
         return;
     }
     if (!state.positionValid) {
@@ -1304,7 +1348,7 @@ function commitPendingPoint() {
     emitStateEvent("point_added", [pointId]);
     emitDatasetReadinessState();
     emitTrainingState();
-    emitModelState();
+    emitModelStatus();
 
     if (state.queue.length === 0) {
         scheduleStep(finishBatch, DRIFTMAP_FINAL_SETTLE_MS);
@@ -1664,7 +1708,7 @@ function beginManagedTraining(mode, internalRequest) {
     }
 
     if (requestedMode === "continue" &&
-            !modelReadyForCommands()) {
+            !modelCanContinue()) {
         emitError("architecture_reset_required", false);
         return;
     }
@@ -1674,7 +1718,7 @@ function beginManagedTraining(mode, internalRequest) {
     state.trainingOperationId = trainingOperationSerial;
     state.trainingActive = true;
     state.trainingMode = requestedMode;
-    state.modelReadyBeforeTraining = requestedMode === "continue" && modelReadyForCommands();
+    state.modelReadyBeforeTraining = requestedMode === "continue" && modelCanContinue();
     if (requestedMode === "from_scratch") {
         state.modelReady = false;
     }
@@ -1696,7 +1740,8 @@ function beginManagedTraining(mode, internalRequest) {
     state.modelConfigRevision += 1;
     state.realModelState = "training";
 
-    setPlayGate(0);
+    setPlayGate(0, true);
+    setMatrixGate(0, true);
     state.phase = "training";
     emitUi(["state", "training"]);
     emitUi(["modelstate", "training"]);
@@ -2011,6 +2056,13 @@ function finishManagedTraining(reason) {
     setSlotsBlocked(false, true);
 
     if (successful && action === "") {
+        state.mappingEdit = false;
+        state.modelBypass = false;
+        emitUi(["mapping_edit", 0]);
+        emitUi(["modelbypass", 0]);
+        outlet(4, ["modelbypass", 0]);
+        emitState(["ui", "mapping_edit", 0]);
+        emitState(["ui", "modelbypass", 0]);
         state.architectureDirty = false;
         state.datasetDirty = false;
         state.modelReady = true;
@@ -2092,12 +2144,17 @@ function requestModelReset() {
         emitError("model_reset_not_available", false);
         return;
     }
+    if (interactionShouldLock()) {
+        emitError("operation_in_progress", false);
+        return;
+    }
     if (!state.modelHasWeights) {
         emitError("model_reset_not_available", false);
         return;
     }
     cancelCreatingMapFeedback();
-    setPlayGate(0);
+    setPlayGate(0, true);
+    setMatrixGate(0, true);
     state.modelReady = false;
     state.realModelState = "train_to_start";
     state.modelResetConfirmed = false;
@@ -2316,19 +2373,49 @@ function setOverlay(value) {
 }
 
 function updateApplicationState() {
-    synchronizePlayGate();
+    synchronizeControlGates();
+    emitControlState();
     emitModelState();
     emitTrainingState();
     emitQuestionnaireState();
 }
 
 function synchronizePlayGate() {
-    var enabled = modelReadyForCommands() && !state.trainingActive &&
-        !state.modelBypass && !state.resetInProgress &&
-        state.pendingTrainingAction !== "manual_reset";
-    if (state.playGate !== enabled) {
-        setPlayGate(enabled ? 1 : 0);
+    synchronizeControlGates();
+}
+
+function synchronizeControlGates() {
+    var locked = interactionShouldLock();
+    var editing = mappingEditActive();
+    var predictionEnabled = modelReadyForCommands() && !state.modelBypass &&
+        !editing && !locked;
+    var matrixEnabled = !locked && !editing &&
+        (state.modelBypass || !modelReadyForCommands());
+    /* Always close the previous source before opening the next one. This
+     * prevents even a one-message overlap between the MLP and matrix paths. */
+    if (predictionEnabled) {
+        setMatrixGate(0);
+        setPlayGate(1);
+    } else if (matrixEnabled) {
+        setPlayGate(0);
+        setMatrixGate(1);
+    } else {
+        setPlayGate(0);
+        setMatrixGate(0);
     }
+}
+
+function emitControlState() {
+    var editing = mappingEditActive();
+    var locked = interactionShouldLock();
+    var dialsLocked = !state.matrixGate;
+    var source = locked ? "locked" :
+        (editing ? "mapping_edit" : (state.playGate ? "prediction" : "matrix"));
+    emitState(["ui", "mapping_edit", editing ? 1 : 0]);
+    emitState(["ui", "dials_locked", dialsLocked ? 1 : 0]);
+    emitState(["ui", "control_source", source]);
+    emitState(["ui", "modelbypass", state.modelBypass ? 1 : 0]);
+    emitUi(["mapping_edit", editing ? 1 : 0]);
 }
 
 function emitOverlayState() {
@@ -2600,6 +2687,8 @@ function emitModelStatus() {
     var uiState;
     if (state.architectureDirty) {
         status = "reset_required";
+    } else if (modelIsStale()) {
+        status = "stale";
     } else if (modelReadyForCommands()) {
         status = "trained";
     } else {
@@ -2612,6 +2701,8 @@ function emitModelStatus() {
         uiState = "failed";
     } else if (modelReadyForCommands()) {
         uiState = "ready";
+    } else if (modelIsStale()) {
+        uiState = "stale";
     } else {
         uiState = "empty";
     }
@@ -2637,11 +2728,14 @@ function emitStateEvent(name, args) {
 }
 
 function emitStateSnapshot() {
+    synchronizeControlGates();
     emitDatasetVisualSnapshot();
     emitState(["ui", "view", state.view]);
     emitState(["ui", "mode", state.mode]);
     emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+    emitState(["ui", "matrix_gate", state.matrixGate ? 1 : 0]);
     emitState(["ui", "modelbypass", state.modelBypass ? 1 : 0]);
+    emitControlState();
     emitState(["ui", "creating_map_duration", state.creatingMapDuration]);
     emitModelState();
     emitOverlayState();
@@ -2700,6 +2794,9 @@ function emitModelState() {
     var display = modelDisplayState();
     emitState(["ui", "model", display]);
     emitState(["ui", "model_state", modelLifecycleState()]);
+    emitState(["ui", "weights_available", state.modelHasWeights ? 1 : 0]);
+    emitState(["ui", "model_stale", modelIsStale() ? 1 : 0]);
+    emitState(["ui", "prediction_ready", modelReadyForCommands() ? 1 : 0]);
     emitState(["ui", "application_mode", applicationModeState()]);
     emitState(["ui", "temporary_state", temporaryUiState()]);
     emitState(["status_text", statusTextFor(display)]);
@@ -2715,6 +2812,9 @@ function modelDisplayState() {
     }
     if (state.modelBypass) {
         return "off";
+    }
+    if (modelIsStale()) {
+        return "stale";
     }
     if (modelReadyForCommands()) {
         return "ready";
@@ -2738,6 +2838,12 @@ function statusTextFor(display) {
     }
     if (display === "failed") {
         return modeLabel + " • MODEL FAILED";
+    }
+    if (mappingEditActive()) {
+        return modeLabel + " • MAPPING EDIT";
+    }
+    if (display === "stale") {
+        return modeLabel + " • MODEL NEEDS TRAINING";
     }
     return modeLabel + " • TRAIN TO START";
 }
@@ -2778,13 +2884,14 @@ function emitTrainingState() {
         !state.creatingMapFeedbackActive &&
         state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
     emitState(["training", "can_continue_training",
-        manualMode && datasetReadyForTraining() && modelReadyForCommands() &&
+        manualMode && datasetReadyForTraining() && modelCanContinue() &&
         !state.trainingActive && !state.creatingMapFeedbackActive &&
         state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
     emitState(["training", "can_stop_training",
         manualMode && state.trainingActive ? 1 : 0]);
     emitState(["training", "can_reset_model",
         manualMode && state.modelHasWeights && !state.trainingActive &&
+        !state.creatingMapFeedbackActive &&
         state.pendingTrainingAction !== "manual_reset" ? 1 : 0]);
     emitMappingPermissions();
 }
@@ -2794,7 +2901,15 @@ function datasetReadyForTraining() {
 }
 
 function modelReadyForCommands() {
+    return modelCanContinue() && !state.datasetDirty;
+}
+
+function modelCanContinue() {
     return state.modelReady && state.modelHasWeights && !state.architectureDirty;
+}
+
+function modelIsStale() {
+    return modelCanContinue() && state.datasetDirty;
 }
 
 function emitDatasetReadinessState() {
@@ -2812,6 +2927,7 @@ function datasetLifecycleState() {
 function modelLifecycleState() {
     if (state.trainingActive || state.creatingMapFeedbackActive) { return "TRAINING"; }
     if (state.realModelState === "failed") { return "TRAINING_FAILED"; }
+    if (modelIsStale()) { return "MODEL_STALE"; }
     if (modelReadyForCommands()) { return "MODEL_READY"; }
     return "NO_MODEL";
 }
@@ -2838,6 +2954,11 @@ function manualModeActive() {
         (state.mode === "semi" || state.mode === "free");
 }
 
+function mappingEditActive() {
+    return manualModeActive() && !state.modelBypass &&
+        (state.mappingEdit || !modelReadyForCommands());
+}
+
 function pointBatchActive() {
     return state.queue.length > 0 || state.pendingPoint !== null || emitTask !== null ||
         state.phase === "semi_building" || state.phase === "free_building";
@@ -2857,7 +2978,7 @@ function emitMappingPermissions() {
 }
 
 function mappingAllowedWithModel() {
-    return !modelReadyForCommands() || state.modelBypass;
+    return mappingEditActive();
 }
 
 function trainingCommandState() {
@@ -2867,6 +2988,9 @@ function trainingCommandState() {
     }
     if (modelReadyForCommands()) {
         return "MODEL_READY";
+    }
+    if (modelIsStale()) {
+        return "MODEL_STALE";
     }
     if (datasetReadyForTraining()) {
         return "DATA_READY";

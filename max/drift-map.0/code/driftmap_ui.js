@@ -238,7 +238,7 @@ function receiveMessage(name, args) {
         viewState.mapPointSize = boundedNumber(args[0], viewState.mapPointSize, 2, 30);
     } else if (name === "mappointcolormode") {
         numeric = Number(args[0]);
-        if (numeric === 1 || numeric === 2 || numeric === 3 || numeric === 4) {
+        if (numeric === 1 || numeric === 2 || numeric === 3 || numeric === 4 || numeric === 5) {
             viewState.mapPointColorMode = numeric;
         }
     } else if (name === "questionbuttonwidth") {
@@ -430,7 +430,8 @@ function setModelState(value) {
     if (next === "train_to_start") {
         next = "empty";
     }
-    if (next === "empty" || next === "training" || next === "ready" || next === "failed") {
+    if (next === "empty" || next === "training" || next === "ready" ||
+            next === "stale" || next === "failed") {
         viewState.modelState = next;
     }
 }
@@ -679,7 +680,7 @@ function drawExploreView(width, height) {
         drawMapPlane(leftMap);
         drawMapPlane(rightMap);
     }
-    if (viewState.showExplorePoints && !viewState.modelBypass) {
+    if (viewState.showExplorePoints) {
         drawDatasetProjection(leftMap, "left");
         drawDatasetProjection(rightMap, "right");
         drawPendingPoint(leftMap, "left");
@@ -705,7 +706,7 @@ function drawLearnView(width, height) {
         drawMapPlane(leftMap);
         drawMapPlane(rightMap);
     }
-    if (viewState.showLearnPoints && !viewState.modelBypass) {
+    if (viewState.showLearnPoints) {
         drawDatasetProjection(leftMap, "left");
         drawDatasetProjection(rightMap, "right");
         drawPendingPoint(leftMap, "left");
@@ -821,7 +822,7 @@ function drawPendingPoint(zone, side) {
 function mapPointColor(side, patternId, logicalIndex, freePoint) {
     var palette;
     var index;
-    if (freePoint) {
+    if (viewState.mapPointColorMode === 5 && freePoint) {
         return COLORS.freePoint;
     }
     if (viewState.mapPointColorMode === 2) {
@@ -830,7 +831,7 @@ function mapPointColor(side, patternId, logicalIndex, freePoint) {
     if (viewState.mapPointColorMode === 3) {
         return side === "left" ? COLORS.leftMapPoint : COLORS.rightMapPoint;
     }
-    if (viewState.mapPointColorMode === 4) {
+    if (viewState.mapPointColorMode === 4 || viewState.mapPointColorMode === 5) {
         palette = [COLORS.mapPointPrimary, COLORS.mapPointSecondary,
             COLORS.mapPointThird, COLORS.mapPointFourth, COLORS.mapPointFifth];
         index = Number(logicalIndex);
@@ -1372,6 +1373,8 @@ function friendlyError(code) {
         invalid_position: "Position must contain four values between 0 and 1.",
         invalid_pattern: "The selected pattern is invalid.",
         preset_not_ready: "The selected preset is not ready.",
+        mapping_edit_required: "Enable mapping edit before adding points.",
+        mapping_edit_not_available: "Mapping edit is available in Guided or Free Learn.",
         empty_dataset: "Add points before training.",
         batch_in_progress: "Point writing is already active.",
         not_enough_patterns: "Not enough patterns are available.",
