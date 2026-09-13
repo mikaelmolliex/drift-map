@@ -77,7 +77,7 @@ var viewState = {
     mapBorderWidth: 2,
     mapFrameStyle: "corners",
     mapPointSize: 6,
-    mapPointColorMode: 1,
+    mapPointColorMode: 4,
 
     questionButtonWidth: 250,
     questionButtonHeight: 58,
@@ -586,7 +586,7 @@ function updateAnimation() {
         (viewState.screen === "questionnaire" || viewState.screen === "auto_building" ||
         viewState.screen === "training" || viewState.showModelReady ||
         viewState.pendingPoint !== null ||
-        (viewState.mainView === "explore" && !viewState.modelBypass));
+        viewState.mainView === "explore");
     if (animated && animationTask === null) {
         animationTask = new Task(animate, this);
         animationTask.interval = 33;
@@ -688,11 +688,9 @@ function drawExploreView(width, height) {
     }
     drawLiveMapCursor(leftMap, [viewState.position[0], viewState.position[1]],
         viewState.leftCursorSize, COLORS.left);
-    if (!viewState.modelBypass) {
-        drawParticleOrb(width * 0.5, centerY,
-            Math.min(viewState.orbSize * 0.5, Math.min(width, height) * 0.34),
-            viewState.modelState);
-    }
+    drawParticleOrb(width * 0.5, centerY,
+        Math.min(viewState.orbSize * 0.5, Math.min(width, height) * 0.34),
+        viewState.modelState);
     drawLiveMapCursor(rightMap, [viewState.position[2], viewState.position[3]],
         viewState.rightCursorSize, COLORS.right);
 }

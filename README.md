@@ -4,18 +4,18 @@ Drift Map is an accessible digital musical instrument built in Max/MSP. It explo
 
 This repository accompanies the research project **Personalized Gesture-to-Sound Mapping for Accessible Digital Musical Instruments: An Interactive Machine Learning Approach**.
 
-> **Status:** research prototype / pre-release. The source project is available, but the public macOS standalone must still complete Developer ID signing, notarization, and clean-machine validation.
+> **Status:** research prototype / pre-release. The source is available as an open-source Max project, and the first standalone release targets macOS on Apple Silicon (`arm64`).
 
 ## Signal flow
 
 ```text
-Camera, gamepad, mouse, MIDI, or OSC
+Camera, gamepad, or OSC
                     ↓
         Gesture routing and calibration
                     ↓
      Personalized FluCoMa mapping model
                     ↓
-        Grainflow granular synthesis
+        Grainflow granular synthesis, MIDI or OSC
 ```
 
 The bundled MediaPipe tracker processes camera frames locally and sends landmark data to Max over OSC. Camera images are not intentionally uploaded to a cloud service.
@@ -25,11 +25,24 @@ The bundled MediaPipe tracker processes camera frames locally and sends landmark
 - Personalized gesture-to-sound mapping
 - Guided and free interactive-learning workflows
 - MediaPipe tracking for up to two hands
-- Gamepad, mouse, MIDI, and OSC input
+- Gamepad input
+- MIDI and OSC connectivity
 - Local gesture routing and calibration
 - FluCoMa-based neural-network mapping
 - Grainflow granular synthesis
-- Included demonstration sounds and presets
+- Included sounds and presets
+
+## Prediction mode
+
+In **Prediction** mode, the trained model listens to a four-dimensional position made from the left and right X/Y axes. The source of those four values depends on the selected input mode:
+
+| Input mode | Left X | Left Y | Right X | Right Y |
+| --- | --- | --- | --- | --- |
+| Gamepad | Left stick X | Left stick Y | Right stick X | Right stick Y |
+| Wearable | Left X axis | Left Y axis | Right X axis | Right Y axis |
+| Hands / MediaPipe | Left middle-finger tip X | Left wrist Y | Right middle-finger tip X | Right wrist Y |
+
+Direct input-to-parameter mapping is bypassed in this mode. The four input coordinates are sent to the trained model, and the model's predictions control the mapped sound parameters.
 
 ## Supported platform
 
@@ -38,8 +51,6 @@ The currently tested configuration is:
 - macOS 11 or later
 - Apple Silicon (`arm64`) for the MediaPipe tracker and first standalone pre-release
 - Max 9.1.2 for the editable Max project
-
-The included FluCoMa helper externals and Grainflow externals are universal Intel/Apple Silicon binaries, but Intel operation of the complete project is not currently supported because the packaged tracker is Apple Silicon only.
 
 ## Downloading the standalone
 
@@ -50,16 +61,20 @@ Once a signed and notarized build is available:
 1. Download and unzip the macOS release asset.
 2. Move `DriftMap.app` to `/Applications`.
 3. Open the application and approve macOS camera access when requested.
-4. Enable the camera control in Drift Map.
+4. To use the embedded MediaPipe tracker, select **Hands** as the input mode and enable the camera control.
 5. Allow approximately 20–30 seconds for the first tracker launch.
+6. To use a gamepad instead, connect a USB or Bluetooth controller and select **Gamepad** as the input mode.
 
-The initial standalone launcher expects this exact application name and location:
+### Saving presets in the standalone
 
-```text
-/Applications/DriftMap.app
-```
+Factory presets are read-only and cannot be overwritten. To modify one:
 
-Max does not need to be installed to use the standalone.
+1. Load the factory preset you want to use as a starting point.
+2. Choose **Save As** and save a new copy to a writable location on your local computer.
+3. Continue editing the local copy.
+4. Use **Save** to update that copy after it has been created.
+
+Do not try to save changes directly over the factory preset inside the application bundle.
 
 ## Running the editable Max project
 
@@ -137,7 +152,40 @@ Primary OSC addresses:
 /hand/right
 ```
 
-The Drift Map input panel also supports an alternative OSC pipeline on port `9000`. For the included GestureCap tracker, use port `11111`.
+## OSC I/O overview
+
+### Default configuration
+
+| Section | Direction | Host / port |
+| --- | --- | --- |
+| Landmarks | IN | Local port `11111` |
+| Wearable Left | IN | Local port `9001` |
+| Wearable Right | IN | Local port `9002` |
+| Dials | OUT | `127.0.0.1:9000` |
+
+For incoming connections, the OSC sender must target the computer's local IP address and the corresponding local port. The Max patch does not need the sender's IP address.
+
+### Wearable OSC input
+
+No universal **Wearables IN** mapping has been defined yet. OSC devices and applications may use different addresses, value ranges, units, and sensor formats.
+
+Users of the editable Max project must therefore:
+
+- inspect the incoming OSC messages;
+- route the relevant OSC addresses;
+- adjust the scaling and calibration for their device;
+- map the normalized values to the desired controls.
+
+### Standalone compatibility
+
+The current standalone does not support generic wearable OSC inputs because their routing and scaling cannot be adjusted by the user.
+
+It currently supports:
+
+- MediaPipe landmark input;
+- OSC Dials output.
+
+Generic wearable OSC input may be added in a future version. This limitation is intentional: Drift Map does not impose a particular OSC application, wearable device, protocol structure, or sensor system. Programmers using the editable Max project remain free to implement the OSC workflow that best fits their setup.
 
 ## Troubleshooting
 
@@ -180,7 +228,7 @@ drift-map/
 
 The included factory audio examples were generated by the project author with Suno while subscribed to a paid plan and are provided as demonstration material for Drift Map.
 
-Interface icons are derived from [Iconoir](https://iconoir.com/). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency and asset notices. A complete third-party license inventory must accompany the signed standalone release.
+SVG interface icons and logos are sourced from [Iconoir](https://iconoir.com/). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency and asset notices. A complete third-party license inventory must accompany the signed standalone release.
 
 ## Credits
 

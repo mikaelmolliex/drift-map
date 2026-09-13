@@ -205,6 +205,8 @@ function handleCommand(name, args) {
         emitUi(["reduce_motion", readBoolean(args[0]) ? 1 : 0]);
     } else if (name === "modelbypass") {
         setModelBypass(args[0]);
+    } else if (name === "model_active") {
+        setModelActive(args[0]);
     } else if (name === "mapping_edit") {
         setMappingEdit(args[0]);
     } else if (name === "showmappoints") {
@@ -575,6 +577,21 @@ function setModelBypass(value) {
     updateApplicationState();
 }
 
+function setModelActive(value) {
+    var next = readBoolean(value);
+    /* MODEL ACTIVE is the user-facing, positive-polarity alias of the
+     * historical modelbypass command. Explicit mapping edit always wins. */
+    if (state.mappingEdit) {
+        if (next) {
+            emitError("operation_in_progress", false);
+        } else {
+            emitControlState();
+        }
+        return;
+    }
+    setModelBypass(next ? 0 : 1);
+}
+
 function setMappingEdit(value) {
     var next = readBoolean(value);
     if (!manualModeActive()) {
@@ -593,7 +610,7 @@ function setMappingEdit(value) {
         emitState(["ui", "modelbypass", 0]);
     }
     emitUi(["mapping_edit", mappingEditActive() ? 1 : 0]);
-    updateApplicationState();
+    updateApplicationState(true);
 }
 
 function setPlayGate(value, force) {
@@ -602,6 +619,7 @@ function setPlayGate(value, force) {
         state.playGate = next;
         outlet(4, ["play_gate", state.playGate ? 1 : 0]);
         emitState(["ui", "play_gate", state.playGate ? 1 : 0]);
+        emitState(["ui", "model_active", state.playGate ? 1 : 0]);
     }
 }
 
@@ -2372,8 +2390,8 @@ function setOverlay(value) {
     updateApplicationState();
 }
 
-function updateApplicationState() {
-    synchronizeControlGates();
+function updateApplicationState(forceGates) {
+    synchronizeControlGates(forceGates);
     emitControlState();
     emitModelState();
     emitTrainingState();
@@ -2384,7 +2402,7 @@ function synchronizePlayGate() {
     synchronizeControlGates();
 }
 
-function synchronizeControlGates() {
+function synchronizeControlGates(force) {
     var locked = interactionShouldLock();
     var editing = mappingEditActive();
     var predictionEnabled = modelReadyForCommands() && !state.modelBypass &&
@@ -2394,14 +2412,14 @@ function synchronizeControlGates() {
     /* Always close the previous source before opening the next one. This
      * prevents even a one-message overlap between the MLP and matrix paths. */
     if (predictionEnabled) {
-        setMatrixGate(0);
-        setPlayGate(1);
+        setMatrixGate(0, force);
+        setPlayGate(1, force);
     } else if (matrixEnabled) {
-        setPlayGate(0);
-        setMatrixGate(1);
+        setPlayGate(0, force);
+        setMatrixGate(1, force);
     } else {
-        setPlayGate(0);
-        setMatrixGate(0);
+        setPlayGate(0, force);
+        setMatrixGate(0, force);
     }
 }
 
@@ -2414,6 +2432,7 @@ function emitControlState() {
     emitState(["ui", "mapping_edit", editing ? 1 : 0]);
     emitState(["ui", "dials_locked", dialsLocked ? 1 : 0]);
     emitState(["ui", "control_source", source]);
+    emitState(["ui", "model_active", state.playGate ? 1 : 0]);
     emitState(["ui", "modelbypass", state.modelBypass ? 1 : 0]);
     emitUi(["mapping_edit", editing ? 1 : 0]);
 }
@@ -2823,29 +2842,30 @@ function modelDisplayState() {
 }
 
 function statusTextFor(display) {
-    var modeLabel = mappingModeLabel();
     if (state.creatingMapFeedbackActive || state.overlay === "creating_map") {
-        return modeLabel + " • CREATING MAP";
-    }
-    if (display === "off") {
-        return modeLabel + " • MODEL BYPASSED";
+        return "CREATING MAP";
     }
     if (display === "training") {
-        return modeLabel + " • MODEL TRAINING";
-    }
-    if (display === "ready") {
-        return modeLabel + " • MODEL READY";
+        return "TRAINING MODEL";
     }
     if (display === "failed") {
-        return modeLabel + " • MODEL FAILED";
+        return "TRAINING FAILED";
+    }
+    if (modelIsStale()) {
+        return "MODEL OFF • RETRAIN REQUIRED";
     }
     if (mappingEditActive()) {
-        return modeLabel + " • MAPPING EDIT";
+        return state.modelHasWeights ?
+            "MODEL OFF • MAPPING EDIT" : "NO MODEL • MAPPING EDIT";
     }
-    if (display === "stale") {
-        return modeLabel + " • MODEL NEEDS TRAINING";
+    if (display === "off") {
+        return state.modelHasWeights ?
+            "MODEL OFF • DIRECT CONTROL" : "NO MODEL • DIRECT CONTROL";
     }
-    return modeLabel + " • TRAIN TO START";
+    if (display === "ready") {
+        return "MODEL READY";
+    }
+    return "NO MODEL • DIRECT CONTROL";
 }
 
 function mappingModeLabel() {
@@ -2955,8 +2975,7 @@ function manualModeActive() {
 }
 
 function mappingEditActive() {
-    return manualModeActive() && !state.modelBypass &&
-        (state.mappingEdit || !modelReadyForCommands());
+    return manualModeActive() && !state.modelBypass && state.mappingEdit;
 }
 
 function pointBatchActive() {

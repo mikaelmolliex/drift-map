@@ -2,7 +2,7 @@
     "name": "drift-map",
     "version": 1,
     "creationdate": 3859615462,
-    "modificationdate": 3872138295,
+    "modificationdate": 3872166749,
     "viewrect": [ 0.0, 95.0, 1512.0, 853.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
@@ -17,10 +17,6 @@
             }
         },
         "media": {
-            "LogoMMDark.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
             "PowerLogoMM.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
@@ -113,6 +109,10 @@
                 "kind": "vectorimagefile",
                 "local": 1
             },
+            "settings.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
             "smartphone-device.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
@@ -122,6 +122,10 @@
                 "local": 1
             },
             "video-camera.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
+            "LogoMMDark.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -333,11 +337,11 @@
             }
         },
         "data": {
-            "Algorithmic Dust.json": {
+            "Init Preset.json": {
                 "kind": "json",
                 "local": 1
             },
-            "Init Preset.json": {
+            "Algorithmic Dust.json": {
                 "kind": "json",
                 "local": 1
             },
@@ -419,7 +423,12 @@
                 }
             }
         },
-        "other": {        }
+        "other": {
+            "drift-map-logo-1.icns": {
+                "kind": "file",
+                "local": 1
+            }
+        }
     },
     "layout": {    },
     "searchpath": {    },
