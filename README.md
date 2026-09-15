@@ -6,6 +6,8 @@ This repository accompanies the research project **Personalized Gesture-to-Sound
 
 > **Status:** research prototype / pre-release. The source is available as an open-source Max project, and the first standalone release targets macOS on Apple Silicon (`arm64`).
 
+![Drift Map instrument interface](docs/instrument-ui.png)
+
 ## Signal flow
 
 ```text
@@ -18,7 +20,7 @@ Camera, gamepad, or OSC
         Grainflow granular synthesis, MIDI or OSC
 ```
 
-The bundled MediaPipe tracker processes camera frames locally and sends landmark data to Max over OSC. Camera images are not intentionally uploaded to a cloud service.
+The bundled tracker was compiled specifically to include MediaPipe and OpenCV locally. Camera vision therefore remains private and local: Drift Map does not record or transmit camera images. Only hand-landmark coordinates are sent from the tracker to Max over OSC on the same computer.
 
 ## Features
 
@@ -52,7 +54,9 @@ The currently tested configuration is:
 - Apple Silicon (`arm64`) for the MediaPipe tracker and first standalone pre-release
 - Max 9.1.2 for the editable Max project
 
-## Downloading the standalone
+## Quick start
+
+### macOS standalone
 
 The standalone will be published as a macOS Apple Silicon pre-release on the [GitHub Releases page](https://github.com/mikaelmolliex/drift-map/releases).
 
@@ -60,10 +64,11 @@ Once a signed and notarized build is available:
 
 1. Download and unzip the macOS release asset.
 2. Move `DriftMap.app` to `/Applications`.
-3. Open the application and approve macOS camera access when requested.
-4. To use the embedded MediaPipe tracker, select **Hands** as the input mode and enable the camera control.
-5. Allow approximately 20–30 seconds for the first tracker launch.
-6. To use a gamepad instead, connect a USB or Bluetooth controller and select **Gamepad** as the input mode.
+3. Open the application.
+4. To use hand tracking, select **Hands** as the input mode and enable the camera control.
+5. Approve camera access when macOS requests it. The request appears when the camera is first enabled, not when Drift Map opens.
+6. Allow approximately 20–30 seconds for the first tracker launch. The launcher can retry automatically while macOS completes its first camera authorization.
+7. To use a gamepad instead, connect a USB or Bluetooth controller and select **Gamepad** as the input mode.
 
 ### Saving presets in the standalone
 
@@ -76,9 +81,9 @@ Factory presets are read-only and cannot be overwritten. To modify one:
 
 Do not try to save changes directly over the factory preset inside the application bundle.
 
-## Running the editable Max project
+### Editable Max project
 
-### Requirements
+#### Requirements
 
 - Max 9.1.2
 - [FluCoMa for Max](https://github.com/flucoma/flucoma-max), including `fluid.mlpregressor~`
@@ -87,12 +92,16 @@ Do not try to save changes directly over the factory preset inside the applicati
 
 Install the complete FluCoMa and Grainflow packages through Max's Package Manager or from their official release sources before opening the project. The repository contains selected helper externals, but `fluid.mlpregressor~` is resolved from the installed FluCoMa package.
 
-### Max Project mode — recommended for development
+#### Max Project mode — recommended for development
+
+MediaPipe controls are available only after the patch has been switched to Drift Map's **Development** mode. This project-specific mode is separate from Max's standard patcher editing state.
 
 1. Clone or download the complete repository. Keep the entire `tracker/doublehand_mp/` directory intact.
 2. Open `max/drift-map.0/drift-map.maxproj` in Max.
-3. Select tracker launch mode **2 — Max Project** if it is not already selected.
-4. Enable the camera control.
+3. Exit Max's **Presentation Mode** to reveal the development controls.
+4. Click the development bang button to switch Drift Map into **Development** mode.
+5. Select tracker launch mode **2 — Max Project** if it is not already selected. This mode uses `run_mediapipe_maxmsp_project.js`.
+6. Return to the interface and enable the camera control.
 
 The project launcher resolves the tracker at:
 
@@ -111,7 +120,7 @@ drift-map/
 
 Do not move `doublehand_mp` away from its `_internal/` directory.
 
-### Patch-only development mode
+#### Patch-only development mode
 
 Tracker launch mode **0 — Development** uses `run_mediapipe_maxmsp.js`. In this mode, the launcher expects:
 
@@ -121,9 +130,9 @@ max/drift-map.0/dist/doublehand_mp/doublehand_mp
 
 Copy the complete `doublehand_mp/` directory to that location before opening `drift-map.maxpat` without its Max Project. The repository itself is organized for the recommended Max Project mode, so this extra copy is not needed when mode 2 is used.
 
-### Standalone build mode
+#### Standalone build mode
 
-Tracker launch mode **1 — Standalone** uses `run_mediapipe_standalone.js`. Before signing a compiled application, copy the complete tracker directory to:
+Tracker launch mode **1 — Standalone** uses `run_mediapipe_standalone_camera_retry.js`. Before signing a compiled application, copy the complete tracker directory to:
 
 ```text
 DriftMap.app/
@@ -136,6 +145,8 @@ DriftMap.app/
 ```
 
 The tracker must be copied before the final application signature is created. Changing any executable or resource after signing invalidates that signature.
+
+Maintainers can follow the complete [macOS standalone build, signing, notarization, and packaging guide](docs/BUILDING_STANDALONE_MACOS.md). The release helper scripts are available in [`scripts/`](scripts/).
 
 ## MediaPipe and OSC
 
@@ -178,11 +189,12 @@ Users of the editable Max project must therefore:
 
 ### Standalone compatibility
 
-The current standalone does not support generic wearable OSC inputs because their routing and scaling cannot be adjusted by the user.
+The current standalone does not support generic wearable OSC inputs because their routing and scaling cannot be adjusted by the user. Wearable input is therefore available only through the editable Max project, where programmers can configure the required OSC routing, ranges, scaling, and calibration.
 
 It currently supports:
 
-- MediaPipe landmark input;
+- MediaPipe hand-landmark input;
+- USB or Bluetooth gamepad input;
 - OSC Dials output.
 
 Generic wearable OSC input may be added in a future version. This limitation is intentional: Drift Map does not impose a particular OSC application, wearable device, protocol structure, or sensor system. Programmers using the editable Max project remain free to implement the OSC workflow that best fits their setup.
@@ -199,6 +211,8 @@ Confirm that the complete executable exists at the path expected by the selected
 - Confirm that Drift Map is receiving GestureCap OSC on port `11111`.
 - Wait up to 30 seconds on the first launch.
 - Check the Max console for tracker or OSC messages.
+
+If camera access was denied, macOS records that decision and does not display the permission request again. Open **System Settings → Privacy & Security → Camera**, enable access for DriftMap, return to the application, and enable the camera again.
 
 ### `fluid.mlpregressor~` cannot be found
 
@@ -218,7 +232,8 @@ Use the signed and notarized GitHub Release asset. Do not replace its signature 
 drift-map/
 ├── max/drift-map.0/              Max project, patch, scripts, presets, and media
 ├── tracker/doublehand_mp/        Packaged local MediaPipe tracker
-├── docs/                         Release and technical documentation
+├── docs/                         Interface preview and build documentation
+├── scripts/                      Release preparation and signing helpers
 ├── paper/                        Associated publication material
 ├── LICENSE                       Drift Map source-code license
 └── THIRD_PARTY_NOTICES.md        Dependency and asset notices

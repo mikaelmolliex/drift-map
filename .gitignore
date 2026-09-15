@@ -8,6 +8,9 @@
 # Max deleted patches
 _DeletedItems/
 
+# Private maintainer documentation and release tools
+_dev-notes/
+
 # Local standalone and release outputs
 *.app
 *.dmg

@@ -2,7 +2,7 @@
     "name": "drift-map",
     "version": 1,
     "creationdate": 3859615462,
-    "modificationdate": 3872166749,
+    "modificationdate": 3872254735,
     "viewrect": [ 0.0, 95.0, 1512.0, 853.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
@@ -34,10 +34,6 @@
                 "local": 1
             },
             "brain.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
-            },
-            "cpu.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
             },
@@ -125,6 +121,10 @@
                 "kind": "vectorimagefile",
                 "local": 1
             },
+            "cpu.svg": {
+                "kind": "vectorimagefile",
+                "local": 1
+            },
             "LogoMMDark.svg": {
                 "kind": "vectorimagefile",
                 "local": 1
@@ -138,10 +138,6 @@
             },
             "rewind.svg": {
                 "kind": "vectorimagefile"
-            },
-            "refresh-circle.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
             },
             "Arcade Drums.wav": {
                 "kind": "audiofile",
@@ -206,12 +202,10 @@
                 "kind": "vectorimagefile"
             },
             "arrow-up-circle-solid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
+                "kind": "vectorimagefile"
             },
             "arrow-down-circle-solid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1
+                "kind": "vectorimagefile"
             },
             "playstation-gamepad.svg": {
                 "kind": "vectorimagefile",
@@ -226,14 +220,6 @@
                 }
             },
             "view-grid.svg": {
-                "kind": "vectorimagefile",
-                "local": 1,
-                "singleton": {
-                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
-                    "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
-                }
-            },
-            "select-face3d.svg": {
                 "kind": "vectorimagefile",
                 "local": 1,
                 "singleton": {
@@ -306,9 +292,6 @@
             "routing-matrix_gamepad_dial_270.js": {
                 "kind": "javascript"
             },
-            "routing-matrix_resize_any.js": {
-                "kind": "javascript"
-            },
             "run_mediapipe_maxmsp.js": {
                 "kind": "javascript",
                 "local": 1
@@ -321,15 +304,20 @@
                 "kind": "javascript",
                 "local": 1
             },
-            "routing-matrix_left_interface.js": {
-                "kind": "javascript"
+            "run_mediapipe_standalone_camera_retry.js": {
+                "kind": "javascript",
+                "local": 1
             },
-            "routing-matrix_right_interface.js": {
+            "routing-matrix_resize_any.js": {
                 "kind": "javascript"
             },
             "node-script_driftmap.js": {
                 "kind": "javascript",
-                "local": 1
+                "local": 1,
+                "singleton": {
+                    "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
+                    "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
+                }
             },
             "hands-landmarks-index.js": {
                 "kind": "javascript",
@@ -337,11 +325,11 @@
             }
         },
         "data": {
-            "Init Preset.json": {
+            "Algorithmic Dust.json": {
                 "kind": "json",
                 "local": 1
             },
-            "Algorithmic Dust.json": {
+            "Init Preset.json": {
                 "kind": "json",
                 "local": 1
             },
@@ -410,9 +398,6 @@
             "grainflow~.mxo": {
                 "kind": "object",
                 "local": 1
-            },
-            "ultraleap.mxo": {
-                "kind": "object"
             },
             "fluid.mlpregressor~.mxo": {
                 "kind": "object",
