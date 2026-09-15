@@ -1,6 +1,16 @@
 # Third-Party Notices
 
-Drift Map uses and, in some distributions, embeds third-party software and assets. This document records the principal components currently identified in the project. The final standalone release must include the corresponding license texts and a complete inventory of all libraries packaged with the MediaPipe tracker.
+Drift Map source code is released under the GNU General Public License v3.0. Drift Map also uses and, in some distributions, embeds third-party software and assets. Those components remain governed by their respective licenses; the GPLv3 license for Drift Map does not replace their original copyright notices or license terms.
+
+This document records the principal components identified in the project and the macOS beta standalone. The detailed inventory of transitive libraries packaged with the tracker is being expanded.
+
+## Cycling '74 Max Runtime
+
+- Project: [Max](https://cycling74.com/products/max)
+- License: Cycling '74 proprietary runtime license
+- Use in Drift Map: runtime included in the exported Max standalone
+
+The Max runtime is redistributed with the Max-derived standalone under the redistribution terms of the Cycling '74 license agreement.
 
 ## FluCoMa
 
@@ -25,7 +35,20 @@ The editable project requires the complete FluCoMa Max package for `fluid.mlpreg
 - License: MIT
 - Use in Drift Map: packaged MediaPipe/OpenCV hand tracker and Max launch integration
 
-The tracker bundle also contains MediaPipe, OpenCV, NumPy, Python, and their transitive binary dependencies. Their individual licenses must be collected and included with the public standalone before release.
+The packaged tracker executable combines the author's MIT-licensed integration code with the following principal dependencies:
+
+| Component | Version identified in the bundle | License | Use |
+| --- | --- | --- | --- |
+| [MediaPipe](https://github.com/google-ai-edge/mediapipe) | bundled Python package | Apache-2.0 | hand-landmark detection |
+| [OpenCV](https://opencv.org/) | 4.13.0.92 | Apache-2.0 | camera capture and image processing |
+| [opencv-python](https://github.com/opencv/opencv-python) | 4.13.0.92 | MIT packaging code; bundled libraries retain their own licenses | Python distribution of OpenCV |
+| [Python](https://www.python.org/) | 3.10 | Python Software Foundation License | embedded runtime |
+| [NumPy](https://numpy.org/) | 2.2.6 | BSD 3-Clause and included third-party notices | numerical processing |
+| [FFmpeg](https://ffmpeg.org/) | 7.1.1_3 | GPLv3-or-later for this build | OpenCV video backend |
+| [x264](https://www.videolan.org/developers/x264.html) | bundled shared library | GPLv2-or-later | FFmpeg codec dependency |
+| [x265](https://www.videolan.org/developers/x265.html) | bundled shared library | GPLv2-or-later | FFmpeg codec dependency |
+
+The bundled FFmpeg library reports that it was built with `--enable-gpl`, `--enable-version3`, `--enable-libx264`, and `--enable-libx265`. The resulting FFmpeg build is therefore treated as GPLv3-or-later. Other transitive libraries retain their respective licenses.
 
 ## Iconoir
 

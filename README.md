@@ -146,8 +146,6 @@ DriftMap.app/
 
 The tracker must be copied before the final application signature is created. Changing any executable or resource after signing invalidates that signature.
 
-Maintainers can follow the complete [macOS standalone build, signing, notarization, and packaging guide](docs/BUILDING_STANDALONE_MACOS.md). The release helper scripts are available in [`scripts/`](scripts/).
-
 ## MediaPipe and OSC
 
 The packaged tracker is derived from the author's [GestureCap OSC](https://github.com/mikaelmolliex/gesturecap-osc) integration. It runs MediaPipe and OpenCV locally and sends hand landmarks to:
@@ -232,8 +230,7 @@ Use the signed and notarized GitHub Release asset. Do not replace its signature 
 drift-map/
 ├── max/drift-map.0/              Max project, patch, scripts, presets, and media
 ├── tracker/doublehand_mp/        Packaged local MediaPipe tracker
-├── docs/                         Interface preview and build documentation
-├── scripts/                      Release preparation and signing helpers
+├── docs/instrument-ui.png       Instrument interface preview
 ├── paper/                        Associated publication material
 ├── LICENSE                       Drift Map source-code license
 └── THIRD_PARTY_NOTICES.md        Dependency and asset notices
