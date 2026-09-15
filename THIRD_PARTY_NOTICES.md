@@ -2,7 +2,7 @@
 
 Drift Map source code is released under the GNU General Public License v3.0. Drift Map also uses and, in some distributions, embeds third-party software and assets. Those components remain governed by their respective licenses; the GPLv3 license for Drift Map does not replace their original copyright notices or license terms.
 
-This document records the principal components identified in the project and the macOS beta standalone. The detailed inventory of transitive libraries packaged with the tracker is being expanded.
+This document records the principal components identified in the project and the macOS alpha standalone. The detailed inventory of transitive libraries packaged with the tracker is being expanded.
 
 ## Cycling '74 Max Runtime
 
