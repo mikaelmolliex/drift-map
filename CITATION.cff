@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+message: "If you use Drift Map in your work, please cite the paper below."
+title: "Drift Map"
+type: software
+abstract: "Research prototype of a digital musical instrument designed for accessibility, built in Max/MSP: personalized gesture-to-sound mapping with interactive machine learning (FluCoMa) driving granular synthesis (Grainflow)."
+authors:
+  - family-names: Molliex
+    given-names: Mikaël
+repository-code: "https://github.com/mikaelmolliex/drift-map"
+version: "0.1.0-alpha.1"
+date-released: "2026-09-15"
+keywords:
+  - digital musical instrument
+  - interactive machine learning
+  - gesture-to-sound mapping
+  - Max/MSP
+  - FluCoMa
+  - granular synthesis
+preferred-citation:
+  type: conference-paper
+  title: "Personalized Gesture-to-Sound Mapping for Accessible Digital Musical Instruments: An Interactive Machine Learning Approach"
+  authors:
+    - family-names: Molliex
+      given-names: Mikaël
+      affiliation: "Université de Montréal"
+    - family-names: Abassi
+      given-names: Étienne
+      affiliation: "McGill University"
+  collection-title: "Proceedings of the 7th Conference on AI Music Creativity (AIMC 2026)"
+  conference:
+    name: "AI Music Creativity (AIMC 2026)"
+    city: Berlin
+    country: DE
+    date-start: "2026-09-16"
+    date-end: "2026-09-18"
+  year: 2026
+  doi: "10.5281/zenodo.22256900"

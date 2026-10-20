@@ -1,10 +1,12 @@
 # Drift Map
 
-Drift Map is an accessible digital musical instrument built in Max/MSP. It explores personalized gesture-to-sound mapping through interactive machine learning: performers choose gestures and sounds that suit their own abilities, create examples, and train a FluCoMa model that drives a Grainflow granular synthesizer in real time.
+Drift Map is a research prototype of a digital musical instrument designed for accessibility, built in Max/MSP. It explores personalized gesture-to-sound mapping through interactive machine learning: performers choose gestures and sounds that suit their own abilities, create examples, and train a FluCoMa model that drives a Grainflow granular synthesizer in real time.
 
-This repository accompanies the research project **Personalized Gesture-to-Sound Mapping for Accessible Digital Musical Instruments: An Interactive Machine Learning Approach**.
+This repository accompanies the paper **Personalized Gesture-to-Sound Mapping for Accessible Digital Musical Instruments: An Interactive Machine Learning Approach** (Molliex & Abassi, AIMC 2026). See [Publication](#publication).
 
-> **Status:** research prototype / pre-release. The source is available as an open-source Max project, and the first standalone release targets macOS on Apple Silicon (`arm64`).
+> **Status:** research prototype, alpha (`v0.1.0-alpha.1`). Drift Map has not yet been evaluated with users. The standalone runs on Macs with an Apple chip and macOS 14 or later.
+
+**Demo video:** [Drift Map – Personalized Gesture-to-Sound Mapping in Max/MSP (AIMC 2026 demo)](https://www.youtube.com/watch?v=w-lLaXRyzz0) on YouTube.
 
 ![Drift Map instrument interface](docs/instrument-ui.png)
 
@@ -46,29 +48,34 @@ In **Prediction** mode, the trained model listens to a four-dimensional position
 
 Direct input-to-parameter mapping is bypassed in this mode. The four input coordinates are sent to the trained model, and the model's predictions control the mapped sound parameters.
 
-## Supported platform
+## Requirements
 
-The currently tested configuration is:
+- A Mac with an Apple chip (M1 or later). To check: Apple menu → **About This Mac** → **Chip**.
+- macOS 14 (Sonoma) or later. The bundled hand tracker's libraries require it.
+- A webcam for hand tracking, or a USB or Bluetooth gamepad.
+- Max 9.1.2, only for the editable Max project.
 
-- macOS 11 or later
-- Apple Silicon (`arm64`) for the MediaPipe tracker and first standalone pre-release
-- Max 9.1.2 for the editable Max project
+## Known limits
+
+- Drift Map has not yet been evaluated with users, including disabled musicians.
+- The standalone runs only on Macs with an Apple chip. There is no Intel or Windows version.
+- Hand tracking relies on Google's MediaPipe hand model. Its model card states that it was trained on limited datasets for experimental use, and that hands holding objects or wearing gloves are out of scope.
+- Generic wearable OSC input is available only in the editable Max project.
 
 ## Quick start
 
 ### macOS standalone
 
-The standalone will be published as a macOS Apple Silicon pre-release on the [GitHub Releases page](https://github.com/mikaelmolliex/drift-map/releases).
+1. Download `DriftMap-macOS-arm64.zip` (about 790 MB) from the [v0.1.0-alpha.1 release](https://github.com/mikaelmolliex/drift-map/releases/tag/v0.1.0-alpha.1). The `.sha256` file is optional: it only lets you check the download.
+2. Double-click the zip file to unzip it. Once unzipped, the app takes about 1.7 GB.
+3. Move `DriftMap.app` into your **Applications** folder. This is required for now: hand tracking only starts when the app is exactly at `/Applications/DriftMap.app`. A future version will remove this constraint.
+4. Open the application. macOS asks you to confirm that you want to open an app downloaded from the Internet: choose **Open**.
+5. To use hand tracking, select **Hands** as the input mode and enable the camera control.
+6. Approve camera access when macOS requests it. The request appears when the camera is first enabled, not when Drift Map opens.
+7. Allow approximately 20–30 seconds for the first tracker launch. The launcher can retry automatically while macOS completes its first camera authorization.
+8. To use a gamepad instead, connect a USB or Bluetooth controller and select **Gamepad** as the input mode.
 
-Once a signed and notarized build is available:
-
-1. Download and unzip the macOS release asset.
-2. Move `DriftMap.app` to `/Applications`.
-3. Open the application.
-4. To use hand tracking, select **Hands** as the input mode and enable the camera control.
-5. Approve camera access when macOS requests it. The request appears when the camera is first enabled, not when Drift Map opens.
-6. Allow approximately 20–30 seconds for the first tracker launch. The launcher can retry automatically while macOS completes its first camera authorization.
-7. To use a gamepad instead, connect a USB or Bluetooth controller and select **Gamepad** as the input mode.
+A short step-by-step guide to the first sound and the first trained mapping is in preparation.
 
 ### Saving presets in the standalone
 
@@ -88,7 +95,7 @@ Do not try to save changes directly over the factory preset inside the applicati
 - Max 9.1.2
 - [FluCoMa for Max](https://github.com/flucoma/flucoma-max), including `fluid.mlpregressor~`
 - [Grainflow](https://github.com/composingcap/grainflow) 2.1.2
-- macOS 11 or later on Apple Silicon when using the included tracker
+- macOS 14 (Sonoma) or later on a Mac with an Apple chip when using the included tracker
 
 Install the complete FluCoMa and Grainflow packages through Max's Package Manager or from their official release sources before opening the project. The repository contains selected helper externals, but `fluid.mlpregressor~` is resolved from the installed FluCoMa package.
 
@@ -230,8 +237,8 @@ Use the signed and notarized GitHub Release asset. Do not replace its signature 
 drift-map/
 ├── max/drift-map.0/              Max project, patch, scripts, presets, and media
 ├── tracker/doublehand_mp/        Packaged local MediaPipe tracker
-├── docs/instrument-ui.png       Instrument interface preview
-├── paper/                        Associated publication material
+├── docs/instrument-ui.png        Instrument interface preview
+├── CITATION.cff                  How to cite Drift Map and its paper
 ├── LICENSE                       Drift Map source-code license
 └── THIRD_PARTY_NOTICES.md        Dependency and asset notices
 ```
@@ -242,9 +249,20 @@ The included factory audio examples were generated by the project author with Su
 
 SVG interface icons and logos are sourced from [Iconoir](https://iconoir.com/). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency and asset notices. A complete third-party license inventory must accompany the signed standalone release.
 
+## Publication
+
+Molliex, M., & Abassi, É. (2026). Personalized Gesture-to-Sound Mapping for Accessible Digital Musical Instruments: An Interactive Machine Learning Approach. In *Proceedings of the 7th Conference on AI Music Creativity (AIMC 2026)*, Berlin, Germany. [https://doi.org/10.5281/zenodo.22256900](https://doi.org/10.5281/zenodo.22256900)
+
+- [Full AIMC 2026 talk (video)](https://aimc2026.org/fileadmin/videos/talks/MolliexMikael_PersonalizedGestureToSoundMapping.mp4)
+- [Demo video on YouTube](https://www.youtube.com/watch?v=w-lLaXRyzz0)
+
+GitHub's **Cite this repository** button uses [CITATION.cff](CITATION.cff).
+
 ## Credits
 
 Concept, design, and development: **Mikaël Molliex**.
+
+The AIMC 2026 paper was co-written with Étienne Abassi (The Neuro, McGill University).
 
 AI-assisted tools supported brainstorming, JavaScript completion, debugging, and documentation. All design decisions and final integration were carried out by the author.
 
