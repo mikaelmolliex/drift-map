@@ -2,7 +2,7 @@
 
 Drift Map source code is released under the GNU General Public License v3.0. Drift Map also uses and, in some distributions, embeds third-party software and assets. Those components remain governed by their respective licenses; the GPLv3 license for Drift Map does not replace their original copyright notices or license terms.
 
-This document records the principal components identified in the project and the macOS alpha standalone. The detailed inventory of transitive libraries packaged with the tracker is being expanded.
+This document records the principal components identified in the project and the macOS standalone. The complete inventory of the libraries packaged with the hand tracker ships with the tracker itself (see below).
 
 ## Cycling '74 Max Runtime
 
@@ -28,27 +28,49 @@ The editable project requires the complete FluCoMa Max package for `fluid.mlpreg
 - Bundled external version: 2.1.2
 - Use in Drift Map: granular synthesis, waveform display, and stereo panning
 
-## GestureCap OSC tracker integration
+## GestureCap OSC hand tracker
 
-- Project: [GestureCap OSC](https://github.com/mikaelmolliex/gesturecap-osc)
-- Copyright: Mikaël Molliex
-- License: MIT
-- Use in Drift Map: packaged MediaPipe/OpenCV hand tracker and Max launch integration
+- Project: [GestureCap OSC](https://github.com/mikaelmolliex/gesturecap-osc), by Mikaël Molliex
+- Version used: [`v0.2.0`](https://github.com/mikaelmolliex/gesturecap-osc/releases/tag/v0.2.0) (commit `a72e451`)
+- License: **GPL-3.0-or-later** (GestureCap OSC releases up to `v0.1.0` were MIT)
+- Use in Drift Map:
+  - the packaged tracker, from the release asset `gesturecap-tracker-macos-arm64.zip` (SHA-256 `d0d9259ad22536aa9385d57764ecb5d59ec493654a09852678c483a6b77b3663`), placed in `tracker/doublehand_mp/` (in the standalone: `Contents/Resources/tracker/doublehand_mp/`);
+  - the launcher `max/drift-map.0/code/run_mediapipe.js` and the hand view `max/drift-map.0/code/mediapipe_handdraw.js`, copied unchanged from the same tag.
 
-The packaged tracker executable combines the author's MIT-licensed integration code with the following principal dependencies:
+GestureCap OSC builds on earlier free software:
 
-| Component | Version identified in the bundle | License | Use |
+| Project | Authors | License |
+| --- | --- | --- |
+| [GestureCap](https://github.com/m2b3/gesturecap), Google Summer of Code 2024, INCF | Louis Martinez | GPL-3.0 |
+| [GestureCap 2025](https://github.com/m2b3/gesturecap2025), Google Summer of Code 2025, INCF | Deepansh Goel; Shiv Patil (webcam input) | no license file published |
+
+The packaged tracker carries its own `LICENSE`, `THIRD_PARTY_NOTICES.md` and `licenses/` folder (full license texts). Its principal components:
+
+| Component | Version | License | Use |
 | --- | --- | --- | --- |
-| [MediaPipe](https://github.com/google-ai-edge/mediapipe) | bundled Python package | Apache-2.0 | hand-landmark detection |
-| [OpenCV](https://opencv.org/) | 4.13.0.92 | Apache-2.0 | camera capture and image processing |
-| [opencv-python](https://github.com/opencv/opencv-python) | 4.13.0.92 | MIT packaging code; bundled libraries retain their own licenses | Python distribution of OpenCV |
-| [Python](https://www.python.org/) | 3.10 | Python Software Foundation License | embedded runtime |
-| [NumPy](https://numpy.org/) | 2.2.6 | BSD 3-Clause and included third-party notices | numerical processing |
-| [FFmpeg](https://ffmpeg.org/) | 7.1.1_3 | GPLv3-or-later for this build | OpenCV video backend |
-| [x264](https://www.videolan.org/developers/x264.html) | bundled shared library | GPLv2-or-later | FFmpeg codec dependency |
-| [x265](https://www.videolan.org/developers/x265.html) | bundled shared library | GPLv2-or-later | FFmpeg codec dependency |
+| [Python](https://www.python.org/) | 3.10.12 | PSF-2.0 | embedded runtime |
+| [PyInstaller](https://pyinstaller.org/) bootloader | 6.21.0 | GPL-2.0-or-later with the bootloader exception | starts the packaged program |
+| [MediaPipe](https://github.com/google-ai-edge/mediapipe) | 0.10.14 | Apache-2.0 | hand-landmark detection |
+| Hand landmarker model | float16 | Apache-2.0 | the trained hand model |
+| [OpenCV](https://opencv.org/), as [opencv-python-headless](https://github.com/opencv/opencv-python) | 4.13.0.92 | Apache-2.0 (OpenCV); MIT (packaging scripts) | camera capture and image processing |
+| [FFmpeg](https://ffmpeg.org/), inside OpenCV | 7.1.1 | GPL-3.0-or-later as built | OpenCV's video back end |
+| x264, x265, Rubber Band, vid.stab, libpostproc, inside OpenCV | bundled | GPL-2.0-or-later | FFmpeg dependencies |
+| [NumPy](https://numpy.org/) | 2.2.6 | BSD-3-Clause | numerical arrays |
+| [protobuf](https://github.com/protocolbuffers/protobuf) | 4.25.9 | BSD-3-Clause | MediaPipe data structures |
+| [python-osc](https://github.com/attwad/python-osc) | 1.10.2 | Unlicense | sends the OSC messages to Max |
 
-The bundled FFmpeg library reports that it was built with `--enable-gpl`, `--enable-version3`, `--enable-libx264`, and `--enable-libx265`. The resulting FFmpeg build is therefore treated as GPLv3-or-later. Other transitive libraries retain their respective licenses.
+About 80 further libraries inside OpenCV (codecs, image formats, fonts, TLS and others) keep their own LGPL, BSD, MIT, Apache-2.0 or other licenses; they are listed in the tracker's `licenses/opencv/LICENSE-3RD-PARTY.txt`.
+
+The FFmpeg build inside `opencv-python-headless` 4.13.0.92 records that it was configured with `--enable-gpl --enable-version3`, x264 and x265; it is therefore GPL-3.0-or-later, and so is the packaged tracker as a whole. GPL-3.0 is compatible with Drift Map's GPL-3.0.
+
+Corresponding source:
+
+- GestureCap OSC: its repository at tag [`v0.2.0`](https://github.com/mikaelmolliex/gesturecap-osc/tree/v0.2.0).
+- FFmpeg 7.1.1: the source archive `ffmpeg-7.1.1.tar.xz` attached to the [GestureCap OSC v0.2.0 release](https://github.com/mikaelmolliex/gesturecap-osc/releases/tag/v0.2.0), also at [ffmpeg.org](https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz).
+- OpenCV and its bundled libraries: [opencv-python 4.13.0.92](https://github.com/opencv/opencv-python/tree/92).
+- Each other component: its official repository, at the version listed.
+
+The previous Drift Map release (`v0.1.0-alpha.1`) shipped an earlier build of this tracker, with the dependency versions recorded in that release's notices.
 
 ## Iconoir
 

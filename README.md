@@ -95,29 +95,28 @@ Do not try to save changes directly over the factory preset inside the applicati
 - Max 9.1.2
 - [FluCoMa for Max](https://github.com/flucoma/flucoma-max), including `fluid.mlpregressor~`
 - [Grainflow](https://github.com/composingcap/grainflow) 2.1.2
-- macOS 14 (Sonoma) or later on a Mac with an Apple chip when using the included tracker
+- macOS 14 (Sonoma) or later on a Mac with an Apple chip when using the hand tracker
+- The hand tracker from [GestureCap OSC v0.2.0](https://github.com/mikaelmolliex/gesturecap-osc/releases/tag/v0.2.0) (see below; it is not stored in this repository)
 
 Install the complete FluCoMa and Grainflow packages through Max's Package Manager or from their official release sources before opening the project. The repository contains selected helper externals, but `fluid.mlpregressor~` is resolved from the installed FluCoMa package.
 
-#### Max Project mode — recommended for development
+#### Get the hand tracker
 
-MediaPipe controls are available only after the patch has been switched to Drift Map's **Development** mode. This project-specific mode is separate from Max's standard patcher editing state.
+The packaged tracker is not stored in Git. Download it once:
 
-1. Clone or download the complete repository. Keep the entire `tracker/doublehand_mp/` directory intact.
-2. Open `max/drift-map.0/drift-map.maxproj` in Max.
-3. Exit Max's **Presentation Mode** to reveal the development controls.
-4. Click the development bang button to switch Drift Map into **Development** mode.
-5. Select tracker launch mode **2 — Max Project** if it is not already selected. This mode uses `run_mediapipe_maxmsp_project.js`.
-6. Return to the interface and enable the camera control.
-
-The project launcher resolves the tracker at:
+1. From the [GestureCap OSC v0.2.0 release](https://github.com/mikaelmolliex/gesturecap-osc/releases/tag/v0.2.0), download `gesturecap-tracker-macos-arm64.zip` (about 74 MB). It is signed and notarized.
+2. Optional: check the download. In Terminal, `shasum -a 256 gesturecap-tracker-macos-arm64.zip` must print `d0d9259ad22536aa9385d57764ecb5d59ec493654a09852678c483a6b77b3663`.
+3. Double-click the zip file, then move the resulting `doublehand_mp` folder into a folder named `tracker` at the root of the repository (create it: a fresh clone does not contain it).
 
 ```text
 drift-map/
 ├── tracker/
 │   └── doublehand_mp/
 │       ├── doublehand_mp
-│       └── _internal/
+│       ├── _internal/
+│       ├── LICENSE
+│       ├── THIRD_PARTY_NOTICES.md
+│       └── licenses/
 └── max/
     └── drift-map.0/
         ├── drift-map.maxproj
@@ -125,37 +124,30 @@ drift-map/
         └── patchers/
 ```
 
-Do not move `doublehand_mp` away from its `_internal/` directory.
+Keep the complete `doublehand_mp/` folder together, and keep `tracker/` outside the Max Project folder: a Max Project reorganizes the files inside its own folder, which would break the tracker.
 
-#### Patch-only development mode
+#### Open the Max project
 
-Tracker launch mode **0 — Development** uses `run_mediapipe_maxmsp.js`. In this mode, the launcher expects:
+1. Clone or download the complete repository, and add the tracker as described above.
+2. Open `max/drift-map.0/drift-map.maxproj` in Max.
+3. Exit Max's **Presentation Mode** to reveal the development controls.
+4. Click the development bang button to switch Drift Map into **Development** mode. This project-specific mode is separate from Max's standard patcher editing state.
+5. Return to the interface and enable the camera control. The hand view lists the start-up steps, then asks you to show your hands.
 
-```text
-max/drift-map.0/dist/doublehand_mp/doublehand_mp
-```
+The first launch after download can take about 30 seconds while macOS checks the tracker's files. Later launches showed the hands about 4 seconds after the camera was enabled (measured in the Max project on a MacBook Pro M1 Max).
 
-Copy the complete `doublehand_mp/` directory to that location before opening `drift-map.maxpat` without its Max Project. The repository itself is organized for the recommended Max Project mode, so this extra copy is not needed when mode 2 is used.
+#### How the launcher finds the tracker
 
-#### Standalone build mode
+A single launcher, `code/run_mediapipe.js` (from GestureCap OSC), finds the tracker by itself, wherever the repository or the application is:
 
-Tracker launch mode **1 — Standalone** uses `run_mediapipe_standalone_camera_retry.js`. Before signing a compiled application, copy the complete tracker directory to:
+- in the Max project: `tracker/doublehand_mp/` in a folder up to four levels above `code/`;
+- in a standalone: `DriftMap.app/Contents/Resources/tracker/doublehand_mp/`.
 
-```text
-DriftMap.app/
-└── Contents/
-    └── Resources/
-        └── tracker/
-            └── doublehand_mp/
-                ├── doublehand_mp
-                └── _internal/
-```
-
-The tracker must be copied before the final application signature is created. Changing any executable or resource after signing invalidates that signature.
+For a standalone build, copy the complete `doublehand_mp/` folder to `Contents/Resources/tracker/` before the final application signature is created. Changing any executable or resource after signing invalidates that signature.
 
 ## MediaPipe and OSC
 
-The packaged tracker is derived from the author's [GestureCap OSC](https://github.com/mikaelmolliex/gesturecap-osc) integration. It runs MediaPipe and OpenCV locally and sends hand landmarks to:
+The hand tracker comes from [GestureCap OSC](https://github.com/mikaelmolliex/gesturecap-osc) `v0.2.0` (GPL-3.0-or-later). It runs MediaPipe and OpenCV locally, in a single process that stops when Max quits, and sends hand landmarks to:
 
 ```text
 127.0.0.1:11111
@@ -206,9 +198,11 @@ Generic wearable OSC input may be added in a future version. This limitation is 
 
 ## Troubleshooting
 
-### `Tracker exists: false` or `ENOENT`
+### The hand tracker is not found
 
-Confirm that the complete executable exists at the path expected by the selected launch mode. For the standalone, both the application name and installation location must match `/Applications/DriftMap.app` exactly.
+In the Max project, confirm that `tracker/doublehand_mp/doublehand_mp` exists, next to its `_internal/` folder, as shown in [Get the hand tracker](#get-the-hand-tracker). The Max console prints the path the launcher uses when it starts.
+
+In the `v0.1.0-alpha.1` standalone, the application must be exactly at `/Applications/DriftMap.app`.
 
 ### The tracker opens but no landmarks appear
 
@@ -236,7 +230,7 @@ Use the signed and notarized GitHub Release asset. Do not replace its signature 
 ```text
 drift-map/
 ├── max/drift-map.0/              Max project, patch, scripts, presets, and media
-├── tracker/doublehand_mp/        Packaged local MediaPipe tracker
+├── tracker/doublehand_mp/        Hand tracker from GestureCap OSC (downloaded, not in Git)
 ├── docs/instrument-ui.png        Instrument interface preview
 ├── CITATION.cff                  How to cite Drift Map and its paper
 ├── LICENSE                       Drift Map source-code license
@@ -263,6 +257,8 @@ GitHub's **Cite this repository** button uses [CITATION.cff](CITATION.cff).
 Concept, design, and development: **Mikaël Molliex**.
 
 The AIMC 2026 paper was co-written with Étienne Abassi (The Neuro, McGill University).
+
+The hand tracker comes from GestureCap OSC, which builds on [GestureCap](https://github.com/m2b3/gesturecap) by Louis Martinez (Google Summer of Code 2024, INCF) and [GestureCap 2025](https://github.com/m2b3/gesturecap2025) by Deepansh Goel and Shiv Patil (Google Summer of Code 2025, INCF).
 
 AI-assisted tools supported brainstorming, JavaScript completion, debugging, and documentation. All design decisions and final integration were carried out by the author.
 
