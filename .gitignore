@@ -16,3 +16,6 @@ _dev-notes/
 *.dmg
 *.zip
 *.zip.sha256
+
+# Packaged hand tracker: downloaded from the gesturecap-osc release, never committed
+/tracker/
