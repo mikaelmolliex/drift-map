@@ -289,24 +289,12 @@
                 "kind": "javascript",
                 "local": 1
             },
+            "run_mediapipe.js": {
+                "kind": "javascript",
+                "local": 1
+            },
             "routing-matrix_gamepad_dial_270.js": {
                 "kind": "javascript"
-            },
-            "run_mediapipe_maxmsp.js": {
-                "kind": "javascript",
-                "local": 1
-            },
-            "run_mediapipe_maxmsp_project.js": {
-                "kind": "javascript",
-                "local": 1
-            },
-            "run_mediapipe_standalone.js": {
-                "kind": "javascript",
-                "local": 1
-            },
-            "run_mediapipe_standalone_camera_retry.js": {
-                "kind": "javascript",
-                "local": 1
             },
             "routing-matrix_resize_any.js": {
                 "kind": "javascript"
@@ -318,10 +306,6 @@
                     "bootpath": "/Volumes/SanDisk_A_2T/DropBox_Cloud/Dropbox/BackUP/PROJET_BackUp/MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media",
                     "projectrelativepath": "../../../../../MaxMsp_Projets/2026_MaxMsp_Project/drift-map.0/media"
                 }
-            },
-            "hands-landmarks-index.js": {
-                "kind": "javascript",
-                "local": 1
             }
         },
         "data": {
